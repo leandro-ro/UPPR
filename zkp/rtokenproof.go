@@ -78,20 +78,37 @@ func (p *CredProof) Define(api frontend.API) error {
 	return eddsa.Verify(curve, p.CredSignature, msg, p.IssuerPubKey, &hashsig)
 }
 
-type VrfKeyPairCheck struct {
-	VrfSecretKey frontend.Variable // VRF Secret Key (private input)
-	VrfPublicKey eddsa.PublicKey   `gnark:",public"` // VRF Public Key, i.e. single Credential Attribute
+type VrfKeyPairProof struct {
+	VrfSecretKey frontend.Variable
+	VrfPublicKey eddsa.PublicKey `gnark:",public"` // VRF Public Key, i.e. single Credential Attribute
 }
 
-func (p *VrfKeyPairCheck) Define(api frontend.API) error {
+func (p *VrfKeyPairProof) Define(api frontend.API) error {
 	curve, err := twistededwards.NewEdCurve(api, tedwards.BN254)
 	if err != nil {
 		return err
 	}
 
-	base := twistededwards.Point{X: curve.Params().Base[0], Y: curve.Params().Base[1]}
-	pktest := curve.ScalarMul(base, p.VrfSecretKey)
-	api.AssertIsEqual(p.VrfPublicKey.A.X, pktest.X)
-	api.AssertIsEqual(p.VrfPublicKey.A.Y, pktest.Y)
+	base := twistededwards.Point{X: curve.Params().Base[0].Bytes(), Y: curve.Params().Base[1].Bytes()}
+	expectedPublicKey := curve.ScalarMul(base, p.VrfSecretKey)
+
+	api.AssertIsEqual(p.VrfPublicKey.A.X, expectedPublicKey.X)
+	api.AssertIsEqual(p.VrfPublicKey.A.Y, expectedPublicKey.Y)
+	return nil
+}
+
+type TokenHashProof struct {
+	VrfSecretKey    frontend.Variable
+	RevocationToken frontend.Variable `gnark:",public"` // Revocation Token, i.e. vrf output
+	Epoch           frontend.Variable `gnark:",public"` // Epoch for Revocation Token}
+}
+
+func (p *TokenHashProof) Define(api frontend.API) error {
+	expectedHash, err := mimc.NewMiMC(api)
+	if err != nil {
+		return err
+	}
+	expectedHash.Write(p.Epoch, p.VrfSecretKey)
+	api.AssertIsEqual(p.RevocationToken, expectedHash.Sum())
 	return nil
 }
