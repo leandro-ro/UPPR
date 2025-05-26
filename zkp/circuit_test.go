@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"log"
+	"os"
 	"testing"
 	"time"
 )
@@ -76,6 +77,37 @@ func TestRevocationTokenProof_Verify(t *testing.T) {
 	// Check constraint satisfaction
 	_, err = r1.Solve(witness)
 	require.NoError(t, err)
+}
+
+func TestRevocationTokenProof_ExportSolidity(t *testing.T) {
+	var circuit RevocationTokenProof
+	r1, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
+	require.NoError(t, err)
+
+	pk, vk, err := groth16.Setup(r1)
+	require.NoError(t, err)
+	{
+		f, err := os.Create("sol/cubic.g16.vk")
+		require.NoError(t, err)
+
+		_, err = vk.WriteRawTo(f)
+		require.NoError(t, err)
+	}
+	{
+		f, err := os.Create("sol/cubic.g16.pk")
+		require.NoError(t, err)
+
+		_, err = pk.WriteRawTo(f)
+		require.NoError(t, err)
+	}
+
+	{
+		f, err := os.Create("sol/revocationTokenVerifier.sol")
+		require.NoError(t, err)
+
+		err = vk.ExportSolidity(f)
+		require.NoError(t, err)
+	}
 }
 
 func TestRevocationTokenProof_FalseCred(t *testing.T) {
