@@ -8,12 +8,11 @@ import (
 )
 
 type RevocationTokenProof struct {
-	VrfSecretKey frontend.Variable // VRF Secret Key (private input)
+	VrfSecretKey  frontend.Variable // VRF Secret Key
+	VrfPublicKey  eddsa.PublicKey   // VRF Public Key, i.e. single Credential Attribute
+	CredSignature eddsa.Signature   // Signature on VrfPublicKey by IssuerPubKey
 
-	VrfPublicKey eddsa.PublicKey `gnark:",public"` // VRF Public Key, i.e. single Credential Attribute
-	IssuerPubKey eddsa.PublicKey `gnark:",public"` // Issuer Public Key
-
-	CredSignature   eddsa.Signature   `gnark:",public"` // Signature on VrfPublicKey by IssuerPubKey
+	IssuerPubKey    eddsa.PublicKey   `gnark:",public"` // Issuer Public Key
 	RevocationToken frontend.Variable `gnark:",public"` // Revocation Token, i.e. vrf output
 	Epoch           frontend.Variable `gnark:",public"` // Epoch for Revocation Token
 }
