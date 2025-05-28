@@ -15,7 +15,7 @@ import (
 // EddsaKeyPair represents an EdDSA key pair consisting of a secret key
 // and a public key in a zkp circuit compliant format.
 type EddsaKeyPair struct {
-	Sk *big.Int
+	Sk []byte
 	Pk eddsaInCicuit.PublicKey
 }
 
@@ -53,7 +53,7 @@ func EddsaForCircuitKeyGen() (EddsaKeyPair, error) {
 		},
 	}
 
-	return EddsaKeyPair{Sk: icSk, Pk: icPk}, nil
+	return EddsaKeyPair{Sk: icSk.Bytes(), Pk: icPk}, nil
 }
 
 // hashEddsaPublicKey hashes an EdDSA public key using the MiMC hashing algorithm.
@@ -78,9 +78,9 @@ func hashEddsaPublicKey(pk eddsaInCicuit.PublicKey) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-// genCurrentRevocationToken generates a revocation token  Hash(epoch || sk) for the current epoch using a VRF secret key.
+// GenCurrentRevocationToken generates a revocation token  Hash(epoch || sk) for the current epoch using a VRF secret key.
 // It returns the token as a big.Int, the epoch as a byte slice, and an error if any occurs during execution.
-func genCurrentRevocationToken(vrfSecretKey *big.Int) (token *big.Int, epoch []byte, err error) {
+func GenCurrentRevocationToken(vrfSecretKey []byte) (token *big.Int, epoch []byte, err error) {
 	epochUnix := time.Now().UTC().Unix()
 	epoch = make([]byte, 8)
 	binary.BigEndian.PutUint64(epoch, uint64(epochUnix))
@@ -91,7 +91,7 @@ func genCurrentRevocationToken(vrfSecretKey *big.Int) (token *big.Int, epoch []b
 	if err != nil {
 		return nil, nil, err
 	}
-	_, err = hf.Write(vrfSecretKey.Bytes())
+	_, err = hf.Write(vrfSecretKey)
 	if err != nil {
 		return nil, nil, err
 	}

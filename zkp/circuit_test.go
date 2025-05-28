@@ -49,7 +49,7 @@ func TestRevocationTokenProof_Verify(t *testing.T) {
 
 	// 2. Generate Revocation Token for current epoch.
 	// token = Hash(epoch || sk)
-	token, epoch, err := genCurrentRevocationToken(vrfKey.Sk)
+	token, epoch, err := GenCurrentRevocationToken(vrfKey.Sk)
 	require.NoError(t, err)
 
 	// 3. Convert parameters into proper format for witness generation.
@@ -132,7 +132,7 @@ func TestRevocationTokenProof_FalseCred(t *testing.T) {
 
 	// 2. Generate Revocation Token for current epoch.
 	// token = Hash(epoch || sk)
-	token, epoch, err := genCurrentRevocationToken(vrfKey.Sk)
+	token, epoch, err := GenCurrentRevocationToken(vrfKey.Sk)
 	require.NoError(t, err)
 
 	// 3. Convert parameters into proper format for witness generation.
@@ -185,7 +185,7 @@ func TestRevocationTokenProof_FalseSkForToken(t *testing.T) {
 
 	// 2. Generate Revocation Token for current epoch.
 	// token = Hash(epoch || sk)
-	token, epoch, err := genCurrentRevocationToken(falseVrfKey.Sk)
+	token, epoch, err := GenCurrentRevocationToken(falseVrfKey.Sk)
 	require.NoError(t, err)
 
 	// 3. Convert parameters into proper format for witness generation.
@@ -235,7 +235,7 @@ func TestRevocationTokenProof_FalseEpoch(t *testing.T) {
 
 	// 2. Generate Revocation Token for current epoch.
 	// token = Hash(epoch || sk)
-	token, epoch, err := genCurrentRevocationToken(vrfKey.Sk)
+	token, epoch, err := GenCurrentRevocationToken(vrfKey.Sk)
 	require.NoError(t, err)
 
 	epochUnix := time.Now().UTC().Unix()
@@ -287,7 +287,7 @@ func BenchmarkRevocationTokenProof_Prove(b *testing.B) {
 	msgHash, _ := hashEddsaPublicKey(vrfKey.Pk)
 	hash := mimc.NewMiMC()
 	cred, _ := issuerSecretKey.Sign(msgHash, hash)
-	token, epoch, _ := genCurrentRevocationToken(vrfKey.Sk)
+	token, epoch, _ := GenCurrentRevocationToken(vrfKey.Sk)
 
 	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: issuerSecretKey.PublicKey.A.X, Y: issuerSecretKey.PublicKey.A.Y}}
 	icCredSigInCircuit := eddsaInCicuit.Signature{}
@@ -328,7 +328,7 @@ func BenchmarkRevocationTokenProof_Verify(b *testing.B) {
 	msgHash, _ := hashEddsaPublicKey(vrfKey.Pk)
 	hash := mimc.NewMiMC()
 	cred, _ := issuerSecretKey.Sign(msgHash, hash)
-	token, epoch, _ := genCurrentRevocationToken(vrfKey.Sk)
+	token, epoch, _ := GenCurrentRevocationToken(vrfKey.Sk)
 
 	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: issuerSecretKey.PublicKey.A.X, Y: issuerSecretKey.PublicKey.A.Y}}
 	icCredSigInCircuit := eddsaInCicuit.Signature{}

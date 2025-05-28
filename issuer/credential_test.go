@@ -65,7 +65,7 @@ func TestCredential_RevocationTokenOneShow(t *testing.T) {
 	epoch := make([]byte, 8)
 	binary.BigEndian.PutUint64(epoch, uint64(epochUnix))
 
-	vrfPk, err := cred.GetVrfPublicKey()
+	vrfPk, err := cred.GetVrfOneShowPublicKey()
 	require.NoError(t, err)
 	expectedToken, err := vrf.Verify(vrfPk, epoch, proof)
 	require.NoError(t, err)
@@ -88,4 +88,5 @@ func TestCredential_RevocationTokenMultiShow(t *testing.T) {
 	binary.BigEndian.PutUint64(epoch, uint64(epochUnix))
 
 	// TODO: Check in zkp
+
 }

@@ -81,7 +81,7 @@ func TestModule_TokenHashProof(t *testing.T) {
 	require.NoError(t, err)
 
 	// Compute revocationToken = Hash(epoch || sk)
-	token, epoch, err := genCurrentRevocationToken(vrfKeyPair.Sk)
+	token, epoch, err := GenCurrentRevocationToken(vrfKeyPair.Sk)
 	require.NoError(t, err)
 
 	// Compile circuit
