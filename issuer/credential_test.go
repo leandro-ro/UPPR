@@ -65,8 +65,27 @@ func TestCredential_RevocationTokenOneShow(t *testing.T) {
 	epoch := make([]byte, 8)
 	binary.BigEndian.PutUint64(epoch, uint64(epochUnix))
 
-	vrfPk := cred.GetVrfPublicKey()
-	expectedToken, err := vrf.VerifySecp256k1(vrfPk, epoch, proof)
+	vrfPk, err := cred.GetVrfPublicKey()
 	require.NoError(t, err)
-	require.Equal(t, expectedToken, token)
+	expectedToken, err := vrf.Verify(vrfPk, epoch, proof)
+	require.NoError(t, err)
+	require.Equal(t, RevocationToken(expectedToken), token)
+}
+
+func TestCredential_RevocationTokenMultiShow(t *testing.T) {
+	issuerKey := NewIssuer(MultiShow)
+	cred, err := NewInternalCredential(MultiShow, uint(1), issuerKey.key)
+
+	require.NoError(t, err)
+
+	epochUnix := time.Now().UTC().Unix()
+	token, proof, err := cred.GenRevocationToken(epochUnix)
+	require.NoError(t, err)
+	require.NotNil(t, token)
+	require.Nil(t, proof) // We don't have a proof in this case.
+
+	epoch := make([]byte, 8)
+	binary.BigEndian.PutUint64(epoch, uint64(epochUnix))
+
+	// TODO: Check in zkp
 }

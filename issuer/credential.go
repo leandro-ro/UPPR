@@ -1,11 +1,12 @@
 package issuer
 
 import (
+	"PrivacyPreservingRevocationCode/zkp"
 	"crypto/ecdsa"
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
@@ -13,6 +14,7 @@ import (
 	"math/big"
 )
 
+type RevocationToken []byte
 type CredentialType uint8
 
 const (
@@ -44,45 +46,6 @@ type InternalCredential struct {
 	Credential    Credential     // Cred is the Credential associated with the InternalCredential.
 }
 
-// GenRevocationToken generates a revocation token and its proof based on a given unix epoch and credential type.
-// It supports OneShow and MultiShow credential types. Errors if the type is unknown or token generation fails.
-func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token, proof []byte, error error) {
-	epoch := make([]byte, 8)
-	binary.BigEndian.PutUint64(epoch, uint64(unixEpoch))
-
-	switch ic.Type {
-	case OneShow:
-		vrf := ecvrf.Secp256k1Sha256Tai
-		vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.PrivateKeyVrf)
-		t, p, err := vrf.ProveSecp256k1(vrfSecretKey.ToECDSA(), epoch)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return t, p, nil
-	case MultiShow:
-		// Compute revocationToken = Hash(epoch || vrf secret key)
-		hf := mimc.NewMiMC()
-		_, err := hf.Write(epoch)
-		if err != nil {
-			return nil, nil, err
-		}
-		_, err = hf.Write(ic.PrivateKeyVrf)
-		if err != nil {
-			return nil, nil, err
-		}
-		return hf.Sum(nil), nil, nil
-	default:
-		return nil, nil, errors.New("unknown credential type")
-	}
-}
-
-// TODO: Does this make sense here?
-func (ic *InternalCredential) GetVrfPublicKey() *ecdsa.PublicKey {
-	vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.PrivateKeyVrf)
-	return vrfSecretKey.PubKey().ToECDSA()
-}
-
 func NewInternalCredential(version CredentialType, id uint, issuer eddsa.PrivateKey) (*InternalCredential, error) {
 	var vrfPrivKey []byte
 	var xBig, yBig *big.Int
@@ -99,16 +62,18 @@ func NewInternalCredential(version CredentialType, id uint, issuer eddsa.Private
 		vrfPrivKey = sk.Serialize()
 
 	case MultiShow:
-		sk, err := eddsa.GenerateKey(rand.Reader)
+		sk, err := zkp.EddsaForCircuitKeyGen()
 		if err != nil {
 			return nil, err
 		}
 		xBig = big.NewInt(0)
-		sk.PublicKey.A.X.BigInt(xBig)
+		xBytes := sk.Pk.A.X.(fr.Element)
+		xBytes.BigInt(xBig)
 		yBig = big.NewInt(0)
-		sk.PublicKey.A.Y.BigInt(yBig)
+		yBytes := sk.Pk.A.Y.(fr.Element)
+		yBytes.BigInt(yBig)
 
-		vrfPrivKey = sk.Bytes()
+		vrfPrivKey = sk.Sk.Bytes()
 
 	default:
 		return nil, errors.New("unknown credential type")
@@ -134,6 +99,49 @@ func NewInternalCredential(version CredentialType, id uint, issuer eddsa.Private
 			Signature:        credSignature,
 		},
 	}, nil
+}
+
+// GenRevocationToken generates a revocation token and its proof based on a given unix epoch and credential type.
+// It supports OneShow and MultiShow credential types. Errors if the type is unknown or token generation fails.
+func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token RevocationToken, proof []byte, error error) {
+	epoch := make([]byte, 8)
+	binary.BigEndian.PutUint64(epoch, uint64(unixEpoch))
+
+	switch ic.Type {
+	case OneShow:
+		vrf := ecvrf.Secp256k1Sha256Tai
+		vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.PrivateKeyVrf)
+		t, p, err := vrf.Prove(vrfSecretKey.ToECDSA(), epoch)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return t, p, nil
+	case MultiShow:
+		// Compute revocationToken = Hash(epoch || vrf secret key)
+		hf := mimc.NewMiMC()
+		_, err := hf.Write(epoch)
+		if err != nil {
+			return nil, nil, err
+		}
+		_, err = hf.Write(ic.PrivateKeyVrf)
+		if err != nil {
+			return nil, nil, err
+		}
+		return hf.Sum(nil), nil, nil
+	default:
+		return nil, nil, errors.New("unknown credential type")
+	}
+}
+
+// TODO: Does this make sense here? Only needed for the Multi-Show case. In zkp irrelevant.
+func (ic *InternalCredential) GetVrfPublicKey() (*ecdsa.PublicKey, error) {
+	if ic.Type == OneShow {
+		vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.PrivateKeyVrf)
+		return vrfSecretKey.PubKey().ToECDSA(), nil
+	} else {
+		return nil, errors.New("not supported for this credential type")
+	}
 }
 
 func hashPublicKeyCoordinates(x, y *big.Int) ([]byte, error) {

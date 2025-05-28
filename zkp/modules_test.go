@@ -18,7 +18,7 @@ func TestModule_CredProof(t *testing.T) {
 	issuerSecretKey, err := bn254eddsa.GenerateKey(rand.Reader) // Issuer Secret Key
 	require.NoError(t, err)
 
-	vrfKey, err := eddsaFrKeyGen()
+	vrfKey, err := EddsaForCircuitKeyGen()
 	require.NoError(t, err)
 
 	// 1. Hash vrf public key via MiMC.
@@ -55,7 +55,7 @@ func TestModule_CredProof(t *testing.T) {
 }
 
 func TestModule_VrfKeyPairProof(t *testing.T) {
-	vrfKeyPair, err := eddsaFrKeyGen()
+	vrfKeyPair, err := EddsaForCircuitKeyGen()
 	require.NoError(t, err)
 
 	// Compile circuit
@@ -77,7 +77,7 @@ func TestModule_VrfKeyPairProof(t *testing.T) {
 }
 
 func TestModule_TokenHashProof(t *testing.T) {
-	vrfKeyPair, err := eddsaFrKeyGen()
+	vrfKeyPair, err := EddsaForCircuitKeyGen()
 	require.NoError(t, err)
 
 	// Compute revocationToken = Hash(epoch || sk)

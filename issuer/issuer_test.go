@@ -47,3 +47,33 @@ func TestIssuer_GetRevocationStatus(t *testing.T) {
 	require.Equal(t, id, cred.ID)
 	require.True(t, cred.Revoked)
 }
+
+func TestIssuer_GenRevocationTokensOneShow(t *testing.T) {
+	issuer := NewIssuer(OneShow)
+
+	err := issuer.IssueCredentials(1000)
+	require.NoError(t, err)
+
+	err = issuer.RevokeRandomCredentials(20)
+	require.NoError(t, err)
+
+	revokedTokens, validTokens, _, err := issuer.GenRevocationTokens()
+	require.NoError(t, err)
+	require.Equal(t, 20, len(revokedTokens))
+	require.Equal(t, 980, len(validTokens))
+}
+
+func TestIssuer_GenRevocationTokensMultiShow(t *testing.T) {
+	issuer := NewIssuer(MultiShow)
+
+	err := issuer.IssueCredentials(1000)
+	require.NoError(t, err)
+
+	err = issuer.RevokeRandomCredentials(20)
+	require.NoError(t, err)
+
+	revokedTokens, validTokens, _, err := issuer.GenRevocationTokens()
+	require.NoError(t, err)
+	require.Equal(t, 20, len(revokedTokens))
+	require.Equal(t, 980, len(validTokens))
+}

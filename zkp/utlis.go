@@ -19,9 +19,9 @@ type EddsaKeyPair struct {
 	Pk eddsaInCicuit.PublicKey
 }
 
-// eddsaFrKeyGen generates an EdDSA key pair with the secret key sampled within the BN254 scalar field.
+// EddsaForCircuitKeyGen generates an EdDSA key pair with the secret key sampled within the BN254 scalar field.
 // It computes the corresponding public key using the elliptic curve's base point and formats both keys for compatibility.
-func eddsaFrKeyGen() (EddsaKeyPair, error) {
+func EddsaForCircuitKeyGen() (EddsaKeyPair, error) {
 	var maxFr fr.Element
 	(*fr.Element).SetBigInt(&maxFr, ecc.BN254.ScalarField())
 
