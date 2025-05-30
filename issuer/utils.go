@@ -4,10 +4,11 @@ import (
 	"PrivacyPreservingRevocationCode/zkp"
 	"crypto/ecdsa"
 	"errors"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
-	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	"fmt"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
+	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"math/big"
 )
 
@@ -23,25 +24,29 @@ type VrfKeyPair struct {
 	version          CredentialType
 }
 
-func (v *VrfKeyPair) GetEcdsaPublicKey() (*ecdsa.PublicKey, error) {
+func (v *VrfKeyPair) GetOneShowPublicKey() (*ecdsa.PublicKey, error) {
 	if v.version != OneShow {
 		return nil, errors.New("not supported for this credential type")
 	}
 	return secp256k1.PrivKeyFromBytes(v.PrivateKey).PubKey().ToECDSA(), nil
 }
 
-func (v *VrfKeyPair) GetEddsaPublicKey() (*eddsa.PublicKey, error) {
+func (v *VrfKeyPair) GetMultiShowPublicKey() (*eddsa.PublicKey, error) {
 	if v.version != MultiShow {
 		return nil, errors.New("not supported for this credential type")
 	}
 
-	point := twistededwards.NewPointAffine()
-	return eddsa.PublicKey{A: twistededwards.}
+	x := fr.NewElement(0)
+	x.SetBytes(v.publicKey.x)
+	y := fr.NewElement(0)
+	y.SetBytes(v.publicKey.y)
+
+	return &eddsa.PublicKey{A: twistededwards.NewPointAffine(x, y)}, nil
 }
 
 func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 	var privateKey []byte
-	var xBig, yBig *big.Int
+	var xBytes, yBytes []byte
 
 	switch version {
 	case OneShow:
@@ -50,7 +55,7 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 			return nil, err
 		}
 		pub := sk.PubKey()
-		xBig, yBig = pub.X(), pub.Y()
+		xBytes, yBytes = pub.X().Bytes(), pub.Y().Bytes()
 		privateKey = sk.Serialize()
 
 	case MultiShow:
@@ -58,27 +63,27 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 		if err != nil {
 			return nil, err
 		}
-		xBig = big.NewInt(0)
-		xBytes := sk.Pk.A.X.(fr.Element)
-		xBytes.BigInt(xBig)
-		yBig = big.NewInt(0)
-		yBytes := sk.Pk.A.Y.(fr.Element)
-		yBytes.BigInt(yBig)
-
+		x := sk.Pk.A.X.(fr.Element)
+		xslice := x.Bytes()
+		xBytes = append(xBytes, xslice[:]...)
+		y := sk.Pk.A.Y.(fr.Element)
+		yslice := y.Bytes()
+		yBytes = append(yBytes, yslice[:]...)
+		fmt.Println(x, y)
 		privateKey = sk.Sk
 
 	default:
 		return nil, errors.New("unknown credential type")
 	}
 
-	publicKeyHash, err := hashPublicKeyCoordinates(xBig, yBig)
+	publicKeyHash, err := hashPublicKeyCoordinates(big.NewInt(0).SetBytes(xBytes), big.NewInt(0).SetBytes(yBytes))
 	if err != nil {
 		return nil, err
 	}
 
 	return &VrfKeyPair{
 		PrivateKey:       privateKey,
-		publicKey:        VrfPublicKey{xBig.Bytes(), yBig.Bytes()},
+		publicKey:        VrfPublicKey{xBytes, yBytes},
 		PublicKeyVrfHash: publicKeyHash,
 		version:          version,
 	}, nil

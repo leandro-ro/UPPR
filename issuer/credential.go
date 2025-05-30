@@ -101,30 +101,18 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 	}
 }
 
-func (ic *InternalCredential) GetVrfOneShowPublicKey() (VrfPublicKey, error) {
-	if ic.Type == OneShow {
-		vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.VrfKeyPair.PrivateKey)
-		return vrfSecretKey.PubKey().ToECDSA(), nil
-	} else {
-		return nil, errors.New("not supported for this credential type")
-	}
-}
-
-func (ic *InternalCredential) GetVrfMultiShowPublicKey() (*eddsa.PublicKey, error) {
-	if ic.Type == MultiShow {
-
-	}
-}
-
 func hashPublicKeyCoordinates(x, y *big.Int) ([]byte, error) {
 	mod := ecc.BN254.ScalarField()
 
+	xCopy := new(big.Int).Set(x)
+	yCopy := new(big.Int).Set(y)
+
 	hfunc := mimc.NewMiMC()
-	_, err := hfunc.Write(x.Mod(x, mod).Bytes())
+	_, err := hfunc.Write(xCopy.Mod(xCopy, mod).Bytes())
 	if err != nil {
 		return nil, err
 	}
-	_, err = hfunc.Write(y.Mod(x, mod).Bytes())
+	_, err = hfunc.Write(yCopy.Mod(yCopy, mod).Bytes())
 	if err != nil {
 		return nil, err
 	}

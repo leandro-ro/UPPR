@@ -48,7 +48,7 @@ func (r *RevocationTokenProver) GenProof(cred issuer.InternalCredential, epochUn
 		return nil, nil, err
 	}
 
-	pkVrf, err := cred.GetVrfOneShowPublicKey()
+	pkVrf, err := cred.VrfKeyPair.GetMultiShowPublicKey()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,12 +59,14 @@ func (r *RevocationTokenProver) GenProof(cred issuer.InternalCredential, epochUn
 	icEpoch := make([]byte, 8)
 	binary.BigEndian.PutUint64(icEpoch, uint64(epochUnix))
 
-	icVrfPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: pkVrf.X, Y: pkVrf.Y}}
+	icVrfPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: pkVrf.A.X, Y: pkVrf.A.Y}}
 	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: cred.IssuerPublicKey.A.X, Y: cred.IssuerPublicKey.A.Y}}
 	icToken := big.NewInt(0).SetBytes(token)
 
+	fmt.Println(icVrfPublicKey)
+
 	assignment := &zkp.RevocationTokenProof{
-		VrfSecretKey:    cred.PrivateKeyVrf,
+		VrfSecretKey:    cred.VrfKeyPair.PrivateKey,
 		VrfPublicKey:    icVrfPublicKey,
 		IssuerPubKey:    icIssuerPublicKey,
 		CredSignature:   icCredSigInCircuit,
