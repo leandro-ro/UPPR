@@ -11,7 +11,6 @@ import (
 	"math/big"
 )
 
-type RevocationToken []byte
 type CredentialType uint8
 
 const (

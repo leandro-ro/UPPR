@@ -63,8 +63,6 @@ func (r *RevocationTokenProver) GenProof(cred issuer.InternalCredential, epochUn
 	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: cred.IssuerPublicKey.A.X, Y: cred.IssuerPublicKey.A.Y}}
 	icToken := big.NewInt(0).SetBytes(token)
 
-	fmt.Println(icVrfPublicKey)
-
 	assignment := &zkp.RevocationTokenProof{
 		VrfSecretKey:    cred.VrfKeyPair.PrivateKey,
 		VrfPublicKey:    icVrfPublicKey,

@@ -4,13 +4,22 @@ import (
 	"PrivacyPreservingRevocationCode/zkp"
 	"crypto/ecdsa"
 	"errors"
-	"fmt"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"math/big"
 )
+
+type RevocationToken []byte
+
+func RevocationTokensToByteSlices(tokens []RevocationToken) [][]byte {
+	result := make([][]byte, len(tokens))
+	for i, t := range tokens {
+		result[i] = t
+	}
+	return result
+}
 
 type VrfPublicKey struct {
 	x []byte
@@ -63,13 +72,15 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		x := sk.Pk.A.X.(fr.Element)
 		xslice := x.Bytes()
 		xBytes = append(xBytes, xslice[:]...)
+
 		y := sk.Pk.A.Y.(fr.Element)
 		yslice := y.Bytes()
 		yBytes = append(yBytes, yslice[:]...)
-		fmt.Println(x, y)
+
 		privateKey = sk.Sk
 
 	default:
