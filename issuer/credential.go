@@ -3,6 +3,7 @@ package issuer
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -17,6 +18,17 @@ const (
 	OneShow   CredentialType = 0
 	MultiShow CredentialType = 1
 )
+
+func (ct CredentialType) String() string {
+	switch ct {
+	case OneShow:
+		return "OneShow"
+	case MultiShow:
+		return "MultiShow"
+	default:
+		return fmt.Sprintf("CredentialType(%d)", ct)
+	}
+}
 
 // Credential represents a credential containing a single VRF public key hash as attribute and a corresponding signature.
 type Credential struct {

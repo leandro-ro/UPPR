@@ -1,10 +1,13 @@
 package issuer
 
 import (
+	"PrivacyPreservingRevocationCode/bloom"
 	crand "crypto/rand"
 	"errors"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	mrand "math/rand"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -66,8 +69,8 @@ func (i *Issuer) IssueCredential(id uint) error {
 	return nil
 }
 
-func (i *Issuer) RevokeRandomCredentials(amount int) error {
-	if amount > i.AmountIssued()-i.AmountRevoked() {
+func (i *Issuer) RevokeRandomCredentials(amount uint) error {
+	if int(amount) > i.AmountIssued()-i.AmountRevoked() {
 		return errors.New("not enough unrevoked credentials")
 	}
 
@@ -85,7 +88,7 @@ func (i *Issuer) RevokeRandomCredentials(amount int) error {
 	})
 
 	// Revoke first `amount` credentials
-	for j := 0; j < amount; j++ {
+	for j := 0; uint(j) < amount; j++ {
 		if err := i.RevokeCredential(unrevoked[j]); err != nil {
 			return err // should not happen but good to bubble up
 		}
@@ -105,23 +108,76 @@ func (i *Issuer) RevokeCredential(id uint) error {
 	return nil
 }
 
-func (i *Issuer) GenRevocationTokens() (revoked, valid []RevocationToken, epoch int64, error error) {
+func (i *Issuer) genRevocationTokens() (revoked, valid []RevocationToken, epoch int64, err error) {
 	epoch = time.Now().UTC().Unix()
+
+	type result struct {
+		token   RevocationToken
+		revoked bool
+		err     error
+	}
+
+	numWorkers := runtime.NumCPU()
+	jobs := make(chan *InternalCredential, len(i.issuedCredentials))
+	results := make(chan result, len(i.issuedCredentials))
+
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		go func() {
+			defer wg.Done()
+			for cred := range jobs {
+				token, _, err := cred.GenRevocationToken(epoch)
+				if err != nil {
+					results <- result{err: err}
+					continue
+				}
+				results <- result{token: token, revoked: cred.Revoked}
+			}
+		}()
+	}
+
+	for _, cred := range i.issuedCredentials {
+		jobs <- cred
+	}
+	close(jobs)
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
 	revoked = make([]RevocationToken, 0, i.AmountRevoked())
 	valid = make([]RevocationToken, 0, i.AmountIssued()-i.AmountRevoked())
-	for _, cred := range i.issuedCredentials {
-		token, _, err := cred.GenRevocationToken(epoch)
-		if err != nil {
-			return nil, nil, -1, err
+
+	for res := range results {
+		if res.err != nil {
+			return nil, nil, -1, res.err
 		}
-		if cred.Revoked {
-			revoked = append(revoked, token)
+		if res.revoked {
+			revoked = append(revoked, res.token)
 		} else {
-			valid = append(valid, token)
+			valid = append(valid, res.token)
 		}
 	}
+
 	return revoked, valid, epoch, nil
+}
+
+// GenRevocationArtifact calls genRevocationTokens() an returns a BloomFilterCascade
+func (i *Issuer) GenRevocationArtifact() (artifact *bloom.BloomFilterCascade, revoked, valid []RevocationToken, epoch int64, error error) {
+	revoked, valid, epoch, err := i.genRevocationTokens()
+	if err != nil {
+		return nil, nil, nil, -1, err
+	}
+
+	cascade := bloom.NewCascade(i.AmountIssued(), i.AmountRevoked())
+	err = cascade.Update(RevocationTokensToByteSlices(revoked), RevocationTokensToByteSlices(valid))
+	if err != nil {
+		return nil, nil, nil, -1, err
+	}
+	return cascade, revoked, valid, epoch, nil
 }
 
 func (i *Issuer) GetRevocationStatus(id uint) bool {

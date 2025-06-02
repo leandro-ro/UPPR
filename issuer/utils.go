@@ -13,6 +13,10 @@ import (
 
 type RevocationToken []byte
 
+func (t RevocationToken) ToBytes() []byte {
+	return []byte(t)
+}
+
 func RevocationTokensToByteSlices(tokens []RevocationToken) [][]byte {
 	result := make([][]byte, len(tokens))
 	for i, t := range tokens {
