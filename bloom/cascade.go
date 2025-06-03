@@ -120,6 +120,18 @@ func (c *BloomFilterCascade) Test(element []byte) (bool, int) {
 	panic("unreachable: all layers exhausted without return")
 }
 
+func (c *BloomFilterCascade) GetFilterInOnChainFormat() (filter *[][][]byte, ks *[]byte) {
+
+	filter = &[][][]byte{}
+	ks = &[]byte{}
+
+	for layer, f := range c.filters {
+		filter[layer] = f.b.Words()
+		ks[layer] := f.k
+	}
+
+}
+
 // addNextLayer adds a new Bloom filter layer to the cascade based on the provided elements and false positive rate.
 // The filter stores only the elements passed in and is appended to the internal filter list.
 func (c *BloomFilterCascade) addNextLayer(elements *[][]byte, fprate float64) {
