@@ -22,7 +22,7 @@ func TestModule_CredProof(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1. Hash vrf public key via MiMC.
-	msgHash, err := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, err := HashEddsaPublicKey(vrfKey.Pk)
 	require.NoError(t, err)
 
 	// Sign hash of vrf public key.

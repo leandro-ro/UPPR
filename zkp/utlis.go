@@ -56,9 +56,9 @@ func EddsaForCircuitKeyGen() (EddsaKeyPair, error) {
 	return EddsaKeyPair{Sk: icSk.Bytes(), Pk: icPk}, nil
 }
 
-// hashEddsaPublicKey hashes an EdDSA public key using the MiMC hashing algorithm.
+// HashEddsaPublicKey hashes an EdDSA public key using the MiMC hashing algorithm.
 // It takes an EdDSA public key as input and returns the corresponding hash or an error if hashing fails.
-func hashEddsaPublicKey(pk eddsaInCicuit.PublicKey) ([]byte, error) {
+func HashEddsaPublicKey(pk eddsaInCicuit.PublicKey) ([]byte, error) {
 	var xBig, yBig big.Int
 	xBytes := pk.A.X.(fr.Element)
 	xBytes.BigInt(&xBig)

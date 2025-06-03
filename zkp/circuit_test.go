@@ -38,7 +38,7 @@ func TestRevocationTokenProof_Verify(t *testing.T) {
 
 	// 1. Issue Credential.
 	// 1a. Hash vrf public key via MiMC.
-	msgHash, err := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, err := HashEddsaPublicKey(vrfKey.Pk)
 	require.NoError(t, err)
 
 	// 1b. Sign hash of vrf public key.
@@ -119,7 +119,7 @@ func TestRevocationTokenProof_FalseCred(t *testing.T) {
 
 	// 1. Issue Credential.
 	// 1a. Hash vrf public key via MiMC.
-	msgHash, err := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, err := HashEddsaPublicKey(vrfKey.Pk)
 	require.NoError(t, err)
 
 	msgHash[0] = 0x00 // invalidate hash of vrf public key (i.e., "holder tries to use different credential")
@@ -174,7 +174,7 @@ func TestRevocationTokenProof_FalseSkForToken(t *testing.T) {
 
 	// 1. Issue Credential.
 	// 1a. Hash vrf public key via MiMC.
-	msgHash, err := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, err := HashEddsaPublicKey(vrfKey.Pk)
 	require.NoError(t, err)
 
 	// 1b. Sign hash of vrf public key.
@@ -224,7 +224,7 @@ func TestRevocationTokenProof_FalseEpoch(t *testing.T) {
 
 	// 1. Issue Credential.
 	// 1a. Hash vrf public key via MiMC.
-	msgHash, err := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, err := HashEddsaPublicKey(vrfKey.Pk)
 	require.NoError(t, err)
 
 	// 1b. Sign hash of vrf public key.
@@ -284,7 +284,7 @@ func BenchmarkRevocationTokenProof_ConstraintCount(b *testing.B) {
 func BenchmarkRevocationTokenProof_Prove(b *testing.B) {
 	issuerSecretKey, _ := bn254eddsa.GenerateKey(rand.Reader)
 	vrfKey, _ := EddsaForCircuitKeyGen()
-	msgHash, _ := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, _ := HashEddsaPublicKey(vrfKey.Pk)
 	hash := mimc.NewMiMC()
 	cred, _ := issuerSecretKey.Sign(msgHash, hash)
 	token, epoch, _ := GenCurrentRevocationToken(vrfKey.Sk)
@@ -325,7 +325,7 @@ func BenchmarkRevocationTokenProof_Prove(b *testing.B) {
 func BenchmarkRevocationTokenProof_Verify(b *testing.B) {
 	issuerSecretKey, _ := bn254eddsa.GenerateKey(rand.Reader)
 	vrfKey, _ := EddsaForCircuitKeyGen()
-	msgHash, _ := hashEddsaPublicKey(vrfKey.Pk)
+	msgHash, _ := HashEddsaPublicKey(vrfKey.Pk)
 	hash := mimc.NewMiMC()
 	cred, _ := issuerSecretKey.Sign(msgHash, hash)
 	token, epoch, _ := GenCurrentRevocationToken(vrfKey.Sk)
