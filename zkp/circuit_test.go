@@ -87,14 +87,14 @@ func TestRevocationTokenProof_ExportSolidity(t *testing.T) {
 	pk, vk, err := groth16.Setup(r1)
 	require.NoError(t, err)
 	{
-		f, err := os.Create("sol/cubic.g16.vk")
+		f, err := os.Create("sol/verifer.g16.vk")
 		require.NoError(t, err)
 
 		_, err = vk.WriteRawTo(f)
 		require.NoError(t, err)
 	}
 	{
-		f, err := os.Create("sol/cubic.g16.pk")
+		f, err := os.Create("sol/verifer.g16.pk")
 		require.NoError(t, err)
 
 		_, err = pk.WriteRawTo(f)
