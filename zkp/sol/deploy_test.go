@@ -163,7 +163,7 @@ func TestVerifierGasCosts(t *testing.T) {
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	require.NoError(t, err)
 
-	pkFile, err := os.Open("verifer.g16.pk")
+	pkFile, err := os.Open("build/verifer.g16.pk")
 	require.NoError(t, err)
 	defer pkFile.Close()
 	pk := groth16.NewProvingKey(ecc.BN254)
