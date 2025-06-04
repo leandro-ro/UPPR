@@ -222,8 +222,8 @@ func TestLocation(t *testing.T) {
 
 func TestCap(t *testing.T) {
 	f := NewBloomFilter(1000, 4)
-	if f.Cap() != f.m {
-		t.Error("not accessing Cap() correctly")
+	if f.BitLen() != f.m {
+		t.Error("not accessing BitLen() correctly")
 	}
 }
 
@@ -539,7 +539,7 @@ func TestFrom(t *testing.T) {
 		t.Errorf("Constant k does not match the expected value")
 	}
 
-	if bf.Cap() != uint(len(data)*64) {
+	if bf.BitLen() != uint(len(data)*64) {
 		t.Errorf("Capacity does not match the expected value")
 	}
 

@@ -62,6 +62,19 @@ func baseHashes(data []byte) [4]uint64 {
 	}
 }
 
+// baseHashes returns the four hash values of data that are used to create k
+// hashes
+func BaseHashesDebug(data []byte) [4]uint64 {
+	hash := crypto.Keccak256(data) // 32 bytes
+
+	return [4]uint64{
+		binary.BigEndian.Uint64(hash[0:8]),
+		binary.BigEndian.Uint64(hash[8:16]),
+		binary.BigEndian.Uint64(hash[16:24]),
+		binary.BigEndian.Uint64(hash[24:32]),
+	}
+}
+
 // location returns the ith hashed location using the four base hash values
 func location(h [4]uint64, i uint) uint64 {
 	ii := uint64(i)
@@ -70,7 +83,15 @@ func location(h [4]uint64, i uint) uint64 {
 
 // location returns the ith hashed location using the four base hash values
 func (f *BloomFilter) location(h [4]uint64, i uint) uint {
-	return uint(location(h, i) % uint64(f.m))
+	return uint(location(h, i) % uint64(f.BitLen()))
+}
+
+func (f *BloomFilter) LocationDebug(h [4]uint64, i uint) uint {
+	return uint(location(h, i) % uint64(f.BitLen()))
+}
+
+func (f *BloomFilter) LocationRawDebug(h [4]uint64, i uint) uint {
+	return uint(location(h, i))
 }
 
 // EstimateParameters estimates requirements for m and k.
@@ -89,8 +110,8 @@ func NewWithEstimates(n uint, fp float64) *BloomFilter {
 	return NewBloomFilter(m, k)
 }
 
-// Cap returns the capacity, _m_, of a Bloom filter
-func (f *BloomFilter) Cap() uint {
+// BitLen returns the bit length, _m_, of a Bloom filter
+func (f *BloomFilter) BitLen() uint {
 	return f.m
 }
 
@@ -258,7 +279,7 @@ func EstimateFalsePositiveRate(m, k, n uint) (fpRate float64) {
 // https://en.wikipedia.org/wiki/Bloom_filter#Approximating_the_number_of_items_in_a_Bloom_filter
 func (f *BloomFilter) ApproximatedSize() uint32 {
 	x := float64(f.b.Count())
-	m := float64(f.Cap())
+	m := float64(f.BitLen())
 	k := float64(f.K())
 	size := -1 * m / k * math.Log(1-x/m) / math.Log(math.E)
 	return uint32(math.Floor(size + 0.5)) // round

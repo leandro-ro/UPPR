@@ -1,8 +1,10 @@
 package bloom
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
+	"math/big"
 )
 
 // BloomFilterCascade represents a cascade of Bloom filters.
@@ -120,16 +122,32 @@ func (c *BloomFilterCascade) Test(element []byte) (bool, int) {
 	panic("unreachable: all layers exhausted without return")
 }
 
-func (c *BloomFilterCascade) GetFilterInOnChainFormat() (filter *[][][]byte, ks *[]byte) {
+// GetOnChainFilter returns the serialized representation of all Bloom filter layers,
+// their number of hash functions, and the actual bit lengths.
+// Each layer's filter is encoded as a []byte, packed from its internal []uint64.
+func (c *BloomFilterCascade) GetOnChainFilter() (filters [][]byte, numhf []*big.Int, bitLens []*big.Int) {
+	n := len(c.filters)
+	filters = make([][]byte, n)
+	numhf = make([]*big.Int, n)
+	bitLens = make([]*big.Int, n)
 
-	filter = &[][][]byte{}
-	ks = &[]byte{}
+	for i, f := range c.filters {
+		words := f.b.Words() // []uint64 bitvector
 
-	for layer, f := range c.filters {
-		filter[layer] = f.b.Words()
-		ks[layer] := f.k
+		layerBytes := make([]byte, 8*len(words))
+		for j, word := range words {
+			binary.LittleEndian.PutUint64(layerBytes[j*8:(j+1)*8], word)
+		}
+
+		filters[i] = layerBytes
+		numhf[i] = big.NewInt(int64(f.K()))
+		bitLens[i] = big.NewInt(int64(f.BitLen()))
 	}
 
+	return filters, numhf, bitLens
+}
+func (c *BloomFilterCascade) GetFilters() []*BloomFilter {
+	return c.filters
 }
 
 // addNextLayer adds a new Bloom filter layer to the cascade based on the provided elements and false positive rate.
@@ -162,7 +180,7 @@ func (c *BloomFilterCascade) printStats() {
 	var totalHashFuncs uint
 
 	for i, f := range c.filters {
-		size := f.Cap()
+		size := f.BitLen()
 		k := f.K()
 		totalSizeBits += size
 		totalHashFuncs += k
