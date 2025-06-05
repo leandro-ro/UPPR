@@ -10,14 +10,14 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/stretchr/testify/require"
 	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
+	"time"
 )
 
 func TestCompileAndGenBindings(t *testing.T) {
@@ -152,80 +152,6 @@ func TestOnChainFilterSerialization(t *testing.T) {
 	}
 }
 
-/*func TestTokenHash(t *testing.T) {
-	privKey, err := crypto.GenerateKey()
-	require.NoError(t, err)
-	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
-	require.NoError(t, err)
-
-	alloc := core.GenesisAlloc{
-		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)}, // 1 ETH
-	}
-	sim := backends.NewSimulatedBackend(alloc, 3_000_000_000)
-
-	_, tx, contract, err := onchain.DeployBloom(auth, sim)
-	require.NoError(t, err, "deployment failed")
-	sim.Commit()
-
-	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), receipt.Status, "deployment reverted")
-
-	domain := 1000
-	capacity := 100
-
-	cascade := bloom.NewCascade(domain, capacity)
-	valid, revoked := genRevocationTokens(domain, capacity)
-	err = cascade.Update(revoked, valid)
-	require.NoError(t, err, "failed to update cascade with test data")
-
-	onChainFilter, numHf, bitlen := cascade.GetOnChainFilter()
-	tx, err = contract.UpdateCascade(auth, onChainFilter, numHf, bitlen)
-	require.NoError(t, err, "failed to update on-chain filter")
-	sim.Commit()
-
-	receipt, err = sim.TransactionReceipt(context.Background(), tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), receipt.Status, "update reverted")
-
-	// Select one token to test (e.g., first rev token)
-	tok := revoked[0]
-	offChainResult, offChainLayer := cascade.Test(tok)
-
-	k := cascade.GetFilters()[0].K()
-	m := cascade.GetFilters()[0].BitLen()
-	t.Logf("Mod expected to be %v", m)
-	debug, err := contract.DebugToken(&bind.CallOpts{}, tok, big.NewInt(int64(k)), big.NewInt(int64(m)))
-	require.NoError(t, err, "failed to get debug hash values and locations")
-
-	t.Logf("Off-chain test result: %v (stopped at layer %d)", offChainResult, offChainLayer)
-	t.Logf("On-chain extracted hashes: %v", debug.Hashes)
-	t.Logf("On-chain raw locations: %v", debug.RawLocations)
-	t.Logf("On-chain mod locations: %v", debug.ModLocations)
-
-	debug2, err := contract.DebugTestToken(&bind.CallOpts{}, tok)
-	require.NoError(t, err, "failed to get debug hash values and locations")
-
-	t.Logf("On-chain: Layer %v we got filter size %v", debug2.LayerIndex, debug2.FilterSizeBits)
-
-	debug5, err := contract.GetLayerMetadata(&bind.CallOpts{}, big.NewInt(0))
-	t.Logf("Layer metadata: %v", debug5)
-
-	hexpected := bloom.BaseHashesDebug(tok)
-	t.Logf("Expected hashes: %v", hexpected)
-
-	for i := uint(0); i < k; i++ {
-		locrawexpected := cascade.GetFilters()[0].LocationRawDebug(hexpected, i)
-		t.Logf("Expected raw loc %d: %v", i, locrawexpected)
-		locexpected := cascade.GetFilters()[0].LocationDebug(hexpected, i)
-		t.Logf("Expected mod loc %d: %v", i, locexpected)
-	}
-
-	res, layer, err := contract.TestToken(&bind.CallOpts{}, tok)
-	require.NoError(t, err, "failed to test token on-chain")
-	t.Logf("On-chain test result: %v (stopped at layer %d)", res, layer)
-}*/
-
 func TestUpdate(t *testing.T) {
 	privKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
@@ -286,6 +212,107 @@ func TestUpdate(t *testing.T) {
 		require.Equal(t, lexpected, int(layer.Int64()), "expected layer %d, got %d at index %d", lexpected, int(layer.Int64()), i)
 	}
 
+}
+
+func BenchmarkUpdateCascade(b *testing.B) {
+	configs := []struct {
+		name     string
+		domain   int
+		capacity int
+	}{
+		{"D1k_C10", 1_000, 10},
+		{"D1k_C50", 1_000, 50},
+		{"D1k_C100", 1_000, 100},
+		{"D10k_C100", 10_000, 100},
+		{"D10k_C500", 10_000, 500},
+		{"D10k_C1k", 10_000, 1_000},
+		{"D100k_C1k", 100_000, 1_000},
+		{"D100k_C5k", 100_000, 5_000},
+		{"D100k_C10k", 100_000, 10_000},
+		{"D1M_C10k", 1_000_000, 10_000},
+		{"D1M_C50k", 1_000_000, 50_000},
+		{"D1M_C100k", 1_000_000, 100_000},
+	}
+
+	for _, cfg := range configs {
+		b.Run(cfg.name, func(b *testing.B) {
+			if err := runUpdateCascadeBenchmark(cfg.domain, cfg.capacity); err != nil {
+				b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
+			}
+		})
+	}
+}
+
+func runUpdateCascadeBenchmark(domain, capacity int) error {
+	privKey, err := crypto.GenerateKey()
+	if err != nil {
+		return err
+	}
+	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
+	if err != nil {
+		return err
+	}
+
+	alloc := core.GenesisAlloc{
+		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+	}
+	sim := backends.NewSimulatedBackend(alloc, 30_000_000_000)
+
+	_, tx, contract, err := onchain.DeployBloom(auth, sim)
+	if err != nil {
+		return err
+	}
+	sim.Commit()
+
+	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Deployed contract with gas: %d\n", receipt.GasUsed)
+
+	// First update
+	cascade1 := bloom.NewCascade(domain, capacity)
+	valid1, revoked1 := genRevocationTokens(domain, capacity)
+	if err := cascade1.Update(revoked1, valid1); err != nil {
+		return err
+	}
+	onChainFilter1, numHf1, bitlen1 := cascade1.GetOnChainFilter()
+
+	tx1, err := contract.UpdateCascade(auth, onChainFilter1, numHf1, bitlen1)
+	if err != nil {
+		return err
+	}
+	sim.Commit()
+
+	receipt1, err := sim.TransactionReceipt(context.Background(), tx1.Hash())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[1st] Domain=%d, Capacity=%d, GasUsed=%d\n", domain, capacity, receipt1.GasUsed)
+
+	// Second update after delay
+	time.Sleep(1 * time.Second)
+
+	cascade2 := bloom.NewCascade(domain, capacity)
+	valid2, revoked2 := genRevocationTokens(domain, capacity)
+	if err := cascade2.Update(revoked2, valid2); err != nil {
+		return err
+	}
+	onChainFilter2, numHf2, bitlen2 := cascade2.GetOnChainFilter()
+
+	tx2, err := contract.UpdateCascade(auth, onChainFilter2, numHf2, bitlen2)
+	if err != nil {
+		return err
+	}
+	sim.Commit()
+
+	receipt2, err := sim.TransactionReceipt(context.Background(), tx2.Hash())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("[2nd] Domain=%d, Capacity=%d, GasUsed=%d\n", domain, capacity, receipt2.GasUsed)
+
+	return nil
 }
 
 // genRevocationTokens generates random 128-bit tokens and splits them into valid and revoked sets.
