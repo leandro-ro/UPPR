@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	tedwards "github.com/consensys/gnark-crypto/ecc/twistededwards"
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/witness"
@@ -39,7 +40,7 @@ func NewRevocationTokenProver() (*RevocationTokenProver, error) {
 }
 
 func (r *RevocationTokenProver) GenProof(cred issuer.InternalCredential, epochUnix int64) (groth16.Proof, witness.Witness, error) {
-	if cred.Type != issuer.MultiShow {
+	if cred.Credential.Type != issuer.MultiShow {
 		return nil, nil, fmt.Errorf("credential type is not supported")
 	}
 
@@ -54,13 +55,19 @@ func (r *RevocationTokenProver) GenProof(cred issuer.InternalCredential, epochUn
 	}
 
 	icCredSigInCircuit := eddsaInCicuit.Signature{}
-	icCredSigInCircuit.Assign(tedwards.BN254, cred.Credential.Signature.Bytes())
+	icCredSigInCircuit.Assign(tedwards.BN254, cred.Credential.Signature)
 
 	icEpoch := make([]byte, 8)
 	binary.BigEndian.PutUint64(icEpoch, uint64(epochUnix))
 
+	issPubKey := eddsa.PublicKey{}
+	_, err = issPubKey.SetBytes(cred.IssuerPublicKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	icVrfPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: pkVrf.A.X, Y: pkVrf.A.Y}}
-	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: cred.IssuerPublicKey.A.X, Y: cred.IssuerPublicKey.A.Y}}
+	icIssuerPublicKey := eddsaInCicuit.PublicKey{A: twistededwards.Point{X: issPubKey.A.X, Y: issPubKey.A.Y}}
 	icToken := big.NewInt(0).SetBytes(token)
 
 	assignment := &zkp.RevocationTokenProof{

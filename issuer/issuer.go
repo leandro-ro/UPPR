@@ -4,7 +4,9 @@ import (
 	"PrivacyPreservingRevocationCode/bloom"
 	crand "crypto/rand"
 	"errors"
+	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
+	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 	mrand "math/rand"
 	"runtime"
 	"sync"
@@ -13,17 +15,34 @@ import (
 
 // Issuer maintains issued and revoked credentials.
 type Issuer struct {
-	key                eddsa.PrivateKey             // key is the issuer key pair
+	key                []byte                       // key is the issuer key pair
 	credentialType     CredentialType               // credentialType represents the specific category of CredentialType managed by the issuer.
 	issuedCredentials  map[uint]*InternalCredential // issuedCredentials holds all issued credentials (including revoked)
 	revokedCredentials map[uint]bool                // revokedCredentials holds the uint ids of revoked creds in issuedCredentials
 }
 
+// NewIssuer creates a new Issuer with a generated key appropriate to the credential type.
 func NewIssuer(credentialType CredentialType) *Issuer {
-	key, _ := eddsa.GenerateKey(crand.Reader)
+	var key []byte
+	switch credentialType {
+	case OneShow:
+		privKey, err := ethcrypto.GenerateKey()
+		if err != nil {
+			panic(err)
+		}
+		key = ethcrypto.FromECDSA(privKey) // returns 32-byte secp256k1 private key
+	case MultiShow:
+		eddsaKey, err := eddsa.GenerateKey(crand.Reader)
+		if err != nil {
+			panic(err)
+		}
+		key = eddsaKey.Bytes()
+	default:
+		panic("unknown credential type")
+	}
 
 	return &Issuer{
-		key:                *key,
+		key:                key,
 		credentialType:     credentialType,
 		issuedCredentials:  make(map[uint]*InternalCredential),
 		revokedCredentials: make(map[uint]bool),
@@ -184,9 +203,56 @@ func (i *Issuer) GetRevocationStatus(id uint) bool {
 	return i.revokedCredentials[id]
 }
 
-// GetPublicKey returns the issuer's public key.
-func (i *Issuer) GetPublicKey() eddsa.PublicKey {
-	return i.key.PublicKey
+// GetPublicKey returns the issuer's public key (compressed secp256k1 or eddsa encoded).
+func (i *Issuer) GetPublicKey() []byte {
+	switch i.credentialType {
+	case OneShow:
+		privKey, err := ethcrypto.ToECDSA(i.key)
+		if err != nil {
+			return nil
+		}
+		pubKey := privKey.PublicKey
+		return ethcrypto.CompressPubkey(&pubKey)
+	case MultiShow:
+		var eddsaKey eddsa.PrivateKey
+		_, err := eddsaKey.SetBytes(i.key)
+		if err != nil {
+			return nil
+		}
+		return eddsaKey.PublicKey.Bytes()
+	default:
+		return nil
+	}
+}
+
+func (i *Issuer) VerifySig(msg []byte, sig []byte) (bool, error) {
+	switch i.credentialType {
+	case OneShow:
+		privKey, err := ethcrypto.ToECDSA(i.key)
+		if err != nil {
+			return false, err
+		}
+		pubKey := &privKey.PublicKey
+		if len(sig) != 65 {
+			return false, errors.New("expected 65-byte signature (r||s||v)")
+		}
+		return ethcrypto.VerifySignature(
+			ethcrypto.FromECDSAPub(pubKey),
+			msg,      // must be a 32-byte hash
+			sig[:64], // r||s only
+		), nil
+
+	case MultiShow:
+		pk := eddsa.PublicKey{}
+		_, err := pk.SetBytes(i.key)
+		if err != nil {
+			return false, err
+		}
+		return pk.Verify(sig, msg, mimc.NewMiMC())
+
+	default:
+		return false, errors.New("unsupported credential type")
+	}
 }
 
 // AmountIssued returns the total number of issued credentials.
