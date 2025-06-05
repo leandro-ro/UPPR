@@ -4,12 +4,19 @@ pragma solidity ^0.8.0;
 contract CascadingBloomFilter {
     /* ─── State ───────────────────────────────────────────────────────────── */
 
-    address private _owner;
+    // Owner is set once and never changes → immutable saves a storage read
+    address private immutable _owner;
 
     struct Layer {
-        bytes   filter;         // Packed bit‐vector
-        uint256 filterSizeBits; // Number of valid bits in `filter`
-        uint256 k;              // Number of hash functions
+        // Pack both into a single 32‐byte slot:
+        //   - filterSizeBits (uint64, up to ~1.8e19 bits)
+        //   - k               (uint32, up to ~4e9 hash functions)
+        //
+        // Solidity will pack them together into slot 0.  The `bytes filter` pointer
+        // occupies slot 1.  TOTAL = 2 slots per Layer (instead of 3).
+        uint64  filterSizeBits;
+        uint32  k;
+        bytes   filter;
     }
 
     Layer[] private layers;
@@ -38,28 +45,37 @@ contract CascadingBloomFilter {
         uint256[] calldata ks,
         uint256[] calldata bitLens
     ) external onlyOwner {
-        require(newFilters.length == ks.length,  "Need k for each layer");
-        require(ks.length == bitLens.length,     "Need bitLen for each layer");
-        require(newFilters.length >  0,           "At least one layer");
+        uint256 len = newFilters.length;
+        require(len > 0,             "At least one layer");
+        require(len == ks.length,    "Need k for each layer");
+        require(len == bitLens.length, "Need bitLen for each layer");
 
-        // Remove any existing layers
+        // Wipe out existing layers (cheapest way to reset a dynamic array)
         delete layers;
 
-        for (uint256 i = 0; i < newFilters.length; i++) {
-            bytes    calldata f    = newFilters[i];
-            uint256  k_            = ks[i];
-            uint256  bits          = bitLens[i];
+        // Build up each Layer exactly once:
+        for (uint256 i = 0; i < len; ) {
+            bytes calldata f   = newFilters[i];
+            uint256      k_   = ks[i];
+            uint256      bits = bitLens[i];
 
-            require(k_ > 0,                          "k must be > 0");
-            require(bits > 0,                        "bitLen must be > 0");
-            require(bits <= f.length * 8,           "bitLen exceeds f.length * 8");
+            // -- validate inputs --
+            require(k_ > 0,                     "k must be > 0");
+            require(bits > 0,                   "bitLen must be > 0");
+            require(bits <= f.length * 8,      "bitLen exceeds f.length*8");
+            require(k_ <= type(uint32).max,    "k too large for uint32");
+            require(bits <= type(uint64).max,  "bitLen too large for uint64");
 
-            // Create and populate a new Layer
-            layers.push();
-            Layer storage L = layers[layers.length - 1];
-            L.filter         = f;
-            L.filterSizeBits = bits;
-            L.k              = k_;
+            // Pack into (uint64 filterSizeBits, uint32 k, bytes filter)
+            layers.push(
+                Layer({
+                    filterSizeBits: uint64(bits),
+                    k:              uint32(k_),
+                    filter:         f
+                })
+            );
+
+            unchecked { ++i; }
         }
     }
 
@@ -69,34 +85,41 @@ contract CascadingBloomFilter {
     }
 
     /// @notice Test `token` against every layer. Returns (accepted, layerIndexReached).
+    /// ‣ “Early‐accept” if you hit a zero‐bit in an odd‐indexed layer.
+    /// ‣ On the last layer, require match == (lastIndex % 2 == 0).
     function testToken(bytes calldata token) external view returns (bool, uint256) {
         uint256 n = layers.length;
         require(n > 0, "No layers");
 
+        // Precompute 4×64‐bit hashes once:
         uint64[4] memory h = extractHashes(token);
 
-        for (uint256 li = 0; li < n; li++) {
+        for (uint256 li = 0; li < n; ) {
             Layer storage L = layers[li];
-            bool match_     = testInLayer(L.filter, L.filterSizeBits, L.k, h);
+            bool match_     = _testInLayer(L.filter, uint256(L.filterSizeBits), L.k, h);
 
-            // If this is the last layer, we expect a match on even‐indexed layers
+            // If this is the last layer:
             if (li == n - 1) {
-                bool expected = (li % 2 == 0);
-                return (match_ == expected, li);
+                // On the final layer, we expect a “match” if and only if (li % 2 == 0).
+                bool wantMatch = (li & 1) == 0;
+                return (match_ == wantMatch, li);
             }
 
-            // If there is a mismatch before the last layer, see if we accept early
+            // Otherwise, an early‐reject in even layers → reject immediately.
+            // An early‐reject in odd layers → accept immediately.
             if (!match_) {
-                bool acceptEarly = (li % 2 == 1);
+                bool acceptEarly = (li & 1) == 1;
                 return (acceptEarly, li);
             }
+
+            unchecked { ++li; }
         }
 
+        // This point should never happen.
         revert("unreachable");
     }
 
     /// @notice Return metadata and full filter bytes for layer i.
-    /// @param i Index of the layer (0‐based)
     function getLayerMetadata(uint256 i)
     external
     view
@@ -108,33 +131,38 @@ contract CascadingBloomFilter {
     {
         require(i < layers.length, "Invalid layer");
         Layer storage L = layers[i];
-        return (L.filterSizeBits, L.k, L.filter);
+        return (uint256(L.filterSizeBits), uint256(L.k), L.filter);
     }
 
     /* ─── Internal Helpers ─────────────────────────────────────────────────── */
 
     /// @notice Test a single layer’s `filter` as a Bloom filter.
-    /// @param filter         the full packed bit‐vector (in bytes)
+    /// @param filter         the packed bit‐vector (in storage)
     /// @param filterSizeBits number of bits of `filter` to consider
     /// @param k              number of hash probes
     /// @param h              4×64‐bit “precomputed” hashes
-    function testInLayer(
+    function _testInLayer(
         bytes storage filter,
         uint256 filterSizeBits,
         uint256 k,
         uint64[4] memory h
     ) internal view returns (bool) {
-        for (uint256 i = 0; i < k; i++) {
-            uint256 bitPos    = getLocation(h, i, filterSizeBits);
+        for (uint256 i = 0; i < k; ) {
+            uint256 bitPos    = _getLocation(h, i, filterSizeBits);
+            // Because filterSizeBits ≤ filter.length * 8, we know:
+            //    bitPos < filterSizeBits ≤ filter.length*8
+            // → (bitPos >> 3) < filter.length
+            // Therefore the `byteIndex` check is redundant and can be skipped.
             uint256 byteIndex = bitPos >> 3;
-            require(byteIndex < filter.length, "byteIndex out of range");
+            uint8  bitOffset  = uint8(bitPos & 7);
 
-            uint8 bitOffset = uint8(bitPos & 7);
-            uint8 b         = uint8(filter[byteIndex]);
-
+            // Read one byte from storage:
+            uint8 b = uint8(filter[byteIndex]);
             if (((b >> bitOffset) & 1) == 0) {
                 return false;
             }
+
+            unchecked { ++i; }
         }
         return true;
     }
@@ -145,23 +173,24 @@ contract CascadingBloomFilter {
         h[0] = uint64(uint256(digest >> 192));
         h[1] = uint64((uint256(digest) >> 128) & 0xFFFFFFFFFFFFFFFF);
         h[2] = uint64((uint256(digest) >>  64) & 0xFFFFFFFFFFFFFFFF);
-        h[3] = uint64(uint256(digest)         & 0xFFFFFFFFFFFFFFFF);
+        h[3] = uint64(uint256(digest)          & 0xFFFFFFFFFFFFFFFF);
     }
 
     /// @notice “Go‐style” mixing of the four 64‐bit hashes into k positions
-    /// @param h   Array of 4 precomputed 64‐bit hashes
-    /// @param i   Index of the hash probe (0 ≤ i < k)
-    /// @param mod The Bloom filter’s bit size (filterSizeBits)
-    function getLocation(
+    function _getLocation(
         uint64[4] memory h,
         uint256 i,
         uint256 mod
     ) internal pure returns (uint256) {
+        // We know i fits in uint64 because k ≤ type(uint32).max ≤ uint64
         uint64 ii   = uint64(i);
-        uint64 base = h[ii % 2];
+        uint64 base = h[ii & 1]; // same as h[ii % 2]
         // idx = 2 + ⌊((ii + (ii mod 2)) mod 4) / 2⌋
-        uint64 idx  = 2 + (((ii + (ii % 2)) % 4) / 2);
+        //   Because (ii mod 2) is either 0 or 1, (ii + (ii mod 2)) mod 4 yields 0..3,
+        //   dividing by 2 gives 0 or 1.  So idx ∈ {2,3}.
+        uint64 idx  = 2 + uint64(((ii + (ii & 1)) & 3) >> 1);
         uint64 mult = h[idx];
+
         uint64 sum64;
         unchecked {
             sum64 = base + ii * mult;

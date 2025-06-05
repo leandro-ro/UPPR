@@ -253,7 +253,7 @@ func BenchmarkUpdateCascade(b *testing.B) {
 
 		avgGas1 := sumGas1 / 10
 		avgGas2 := sumGas2 / 10
-		eth1 := float64(avgGas1) * 1e-9
+		eth1 := float64(avgGas1) * 1e-9 // Assume gas price of 1 Gwei
 		eth2 := float64(avgGas2) * 1e-9
 
 		fmt.Printf("| %8d | %8d | %11d | %.9f | %11d | %.9f |\n",
