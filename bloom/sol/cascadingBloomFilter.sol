@@ -4,16 +4,9 @@ pragma solidity ^0.8.0;
 contract CascadingBloomFilter {
     /* ─── State ───────────────────────────────────────────────────────────── */
 
-    // Owner is set once and never changes → immutable saves a storage read
     address private immutable _owner;
 
     struct Layer {
-        // Pack both into a single 32‐byte slot:
-        //   - filterSizeBits (uint64, up to ~1.8e19 bits)
-        //   - k               (uint32, up to ~4e9 hash functions)
-        //
-        // Solidity will pack them together into slot 0.  The `bytes filter` pointer
-        // occupies slot 1.  TOTAL = 2 slots per Layer (instead of 3).
         uint64  filterSizeBits;
         uint32  k;
         bytes   filter;
@@ -105,8 +98,6 @@ contract CascadingBloomFilter {
                 return (match_ == wantMatch, li);
             }
 
-            // Otherwise, an early‐reject in even layers → reject immediately.
-            // An early‐reject in odd layers → accept immediately.
             if (!match_) {
                 bool acceptEarly = (li & 1) == 1;
                 return (acceptEarly, li);

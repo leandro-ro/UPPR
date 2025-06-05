@@ -12,15 +12,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"math/big"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestCompileAndGenBindings(t *testing.T) {
+// Uncomment the following if making changes to cascadingBloomFilter.sol
+/*func TestCompileAndGenBindings(t *testing.T) {
 	// 1) Remove any existing build directory for a clean slate
 	buildDir := "build"
 	_ = os.RemoveAll(buildDir)
@@ -78,6 +75,7 @@ func TestCompileAndGenBindings(t *testing.T) {
 
 	fmt.Printf("Generated files:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
 }
+*/
 
 func TestDeploy(t *testing.T) {
 	// 1) Set up a simulated backend and a funded transactor
