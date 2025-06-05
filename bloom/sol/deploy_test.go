@@ -214,6 +214,7 @@ func TestUpdate(t *testing.T) {
 
 }
 
+// BenchmarkUpdateCascade benchmarks the gas consumption during the update process of an on-chain Bloom filter cascade.
 func BenchmarkUpdateCascade(b *testing.B) {
 	configs := []struct {
 		name     string
@@ -234,23 +235,43 @@ func BenchmarkUpdateCascade(b *testing.B) {
 		{"D1M_C100k", 1_000_000, 100_000},
 	}
 
+	fmt.Println("Benchmark Gas Consumption of UpdateCascade (1st: initial, 2nd: update) for 1 Gas = 1 Gwei and N=10:")
+	fmt.Println("| Domain   | Capacity | 1st Avg Gas | 1st ETH     | 2nd Avg Gas | 2nd ETH     |")
+	fmt.Println("|----------|----------|-------------|-------------|-------------|-------------|")
+
 	for _, cfg := range configs {
-		b.Run(cfg.name, func(b *testing.B) {
-			if err := runUpdateCascadeBenchmark(cfg.domain, cfg.capacity); err != nil {
+		var sumGas1, sumGas2 uint64
+
+		for i := 0; i < 10; i++ {
+			gas1, gas2, err := runUpdateCascadeBenchmark(cfg.domain, cfg.capacity)
+			if err != nil {
 				b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
 			}
-		})
+			sumGas1 += gas1
+			sumGas2 += gas2
+		}
+
+		avgGas1 := sumGas1 / 10
+		avgGas2 := sumGas2 / 10
+		eth1 := float64(avgGas1) * 1e-9
+		eth2 := float64(avgGas2) * 1e-9
+
+		fmt.Printf("| %8d | %8d | %11d | %.9f | %11d | %.9f |\n",
+			cfg.domain, cfg.capacity,
+			avgGas1, eth1,
+			avgGas2, eth2,
+		)
 	}
 }
 
-func runUpdateCascadeBenchmark(domain, capacity int) error {
+func runUpdateCascadeBenchmark(domain, capacity int) (uint64, uint64, error) {
 	privKey, err := crypto.GenerateKey()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	alloc := core.GenesisAlloc{
@@ -260,59 +281,53 @@ func runUpdateCascadeBenchmark(domain, capacity int) error {
 
 	_, tx, contract, err := onchain.DeployBloom(auth, sim)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	sim.Commit()
 
-	receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
+	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	fmt.Printf("Deployed contract with gas: %d\n", receipt.GasUsed)
 
 	// First update
 	cascade1 := bloom.NewCascade(domain, capacity)
 	valid1, revoked1 := genRevocationTokens(domain, capacity)
 	if err := cascade1.Update(revoked1, valid1); err != nil {
-		return err
+		return 0, 0, err
 	}
 	onChainFilter1, numHf1, bitlen1 := cascade1.GetOnChainFilter()
 
 	tx1, err := contract.UpdateCascade(auth, onChainFilter1, numHf1, bitlen1)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	sim.Commit()
-
 	receipt1, err := sim.TransactionReceipt(context.Background(), tx1.Hash())
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	fmt.Printf("[1st] Domain=%d, Capacity=%d, GasUsed=%d\n", domain, capacity, receipt1.GasUsed)
 
-	// Second update after delay
+	// Wait and second update
 	time.Sleep(1 * time.Second)
-
 	cascade2 := bloom.NewCascade(domain, capacity)
 	valid2, revoked2 := genRevocationTokens(domain, capacity)
 	if err := cascade2.Update(revoked2, valid2); err != nil {
-		return err
+		return 0, 0, err
 	}
 	onChainFilter2, numHf2, bitlen2 := cascade2.GetOnChainFilter()
 
 	tx2, err := contract.UpdateCascade(auth, onChainFilter2, numHf2, bitlen2)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	sim.Commit()
-
 	receipt2, err := sim.TransactionReceipt(context.Background(), tx2.Hash())
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	fmt.Printf("[2nd] Domain=%d, Capacity=%d, GasUsed=%d\n", domain, capacity, receipt2.GasUsed)
 
-	return nil
+	return receipt1.GasUsed, receipt2.GasUsed, nil
 }
 
 // genRevocationTokens generates random 128-bit tokens and splits them into valid and revoked sets.
