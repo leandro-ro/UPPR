@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 contract CascadingBloomFilter {
     /* ─── State ───────────────────────────────────────────────────────────── */
 
-    address private immutable _owner;
+    address private _owner;
 
     struct Layer {
         uint64  filterSizeBits;
@@ -28,6 +28,13 @@ contract CascadingBloomFilter {
     }
 
     /* ─── Public/External API ──────────────────────────────────────────────── */
+
+    /// @notice Transfer ownership to a new address.
+    /// @param newOwner The new owner address
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "New owner is zero address");
+        _owner = newOwner;
+    }
 
     /// @notice Replace all layers in one call.
     /// @param newFilters   newFilters[i] is the full packed bit‐vector for layer i

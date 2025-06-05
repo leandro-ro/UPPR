@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Uncomment the following if making changes to cascadingBloomFilter.sol
+// Uncomment the following if making changes to cascadingBloomFilter.sol and wanting to update the bindings.
 /*func TestCompileAndGenBindings(t *testing.T) {
 	// 1) Remove any existing build directory for a clean slate
 	buildDir := "build"
@@ -74,8 +74,7 @@ import (
 	require.Equal(t, buildDir, filepath.Dir(bindingPath), "binding not in build directory")
 
 	fmt.Printf("Generated files:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
-}
-*/
+}*/
 
 func TestDeploy(t *testing.T) {
 	// 1) Set up a simulated backend and a funded transactor

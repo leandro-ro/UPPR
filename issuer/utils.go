@@ -8,6 +8,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/ethereum/go-ethereum/crypto"
 	"math/big"
 )
 
@@ -59,6 +60,7 @@ func (v *VrfKeyPair) GetMultiShowPublicKey() (*eddsa.PublicKey, error) {
 
 func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 	var privateKey []byte
+	var publicKeyHash []byte
 	var xBytes, yBytes []byte
 
 	switch version {
@@ -67,9 +69,13 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 		if err != nil {
 			return nil, err
 		}
-		pub := sk.PubKey()
-		xBytes, yBytes = pub.X().Bytes(), pub.Y().Bytes()
+		xBytes = sk.PubKey().X().Bytes()
+		yBytes = sk.PubKey().Y().Bytes()
+
 		privateKey = sk.Serialize()
+
+		pubKey := sk.PubKey().ToECDSA()
+		publicKeyHash = crypto.Keccak256(crypto.FromECDSAPub(pubKey)) // 65 bytes uncompressed
 
 	case MultiShow:
 		sk, err := zkp.EddsaForCircuitKeyGen()
@@ -87,13 +93,13 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 
 		privateKey = sk.Sk
 
+		publicKeyHash, err = hashPublicKeyCoordinates(big.NewInt(0).SetBytes(xBytes), big.NewInt(0).SetBytes(yBytes))
+		if err != nil {
+			return nil, err
+		}
+
 	default:
 		return nil, errors.New("unknown credential type")
-	}
-
-	publicKeyHash, err := hashPublicKeyCoordinates(big.NewInt(0).SetBytes(xBytes), big.NewInt(0).SetBytes(yBytes))
-	if err != nil {
-		return nil, err
 	}
 
 	return &VrfKeyPair{

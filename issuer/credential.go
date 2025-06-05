@@ -159,17 +159,17 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 }
 
 func hashPublicKeyCoordinates(x, y *big.Int) ([]byte, error) {
+	// MiMC hash for zk-friendly applications
 	mod := ecc.BN254.ScalarField()
-
-	xCopy := new(big.Int).Set(x)
-	yCopy := new(big.Int).Set(y)
+	xCopy := new(big.Int).Mod(x, mod)
+	yCopy := new(big.Int).Mod(y, mod)
 
 	hfunc := mimc.NewMiMC()
-	_, err := hfunc.Write(xCopy.Mod(xCopy, mod).Bytes())
+	_, err := hfunc.Write(xCopy.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	_, err = hfunc.Write(yCopy.Mod(yCopy, mod).Bytes())
+	_, err = hfunc.Write(yCopy.Bytes())
 	if err != nil {
 		return nil, err
 	}

@@ -75,6 +75,28 @@ func (i *Issuer) GetCredentialCopy(id uint) (InternalCredential, error) {
 	return *cred, nil
 }
 
+// GetAllValidCreds returns a slice of all non-revoked credentials.
+func (i *Issuer) GetAllValidCreds() []*InternalCredential {
+	valid := make([]*InternalCredential, 0)
+	for _, cred := range i.issuedCredentials {
+		if !cred.Revoked {
+			valid = append(valid, cred)
+		}
+	}
+	return valid
+}
+
+// GetAllRevokedCreds returns a slice of all revoked credentials.
+func (i *Issuer) GetAllRevokedCreds() []*InternalCredential {
+	revoked := make([]*InternalCredential, 0)
+	for _, cred := range i.issuedCredentials {
+		if cred.Revoked {
+			revoked = append(revoked, cred)
+		}
+	}
+	return revoked
+}
+
 func (i *Issuer) IssueCredential(id uint) error {
 	cred, ok := i.issuedCredentials[id]
 	if ok {
@@ -223,6 +245,10 @@ func (i *Issuer) GetPublicKey() []byte {
 	default:
 		return nil
 	}
+}
+
+func (i *Issuer) GetPrivateKey() []byte {
+	return i.key
 }
 
 func (i *Issuer) VerifySig(msg []byte, sig []byte) (bool, error) {
