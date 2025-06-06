@@ -63,7 +63,7 @@ func (v *VrfKeyPair) GetPublicKeyForOnChain() ([]byte, error) {
 		return nil, errors.New("GetPublicKeyForOnChain only supported for OneShow credentials")
 	}
 	pubKey := secp256k1.PrivKeyFromBytes(v.PrivateKey).PubKey()
-	return pubKey.SerializeUncompressed(), nil
+	return pubKey.SerializeCompressed(), nil
 }
 
 func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
@@ -82,8 +82,8 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 
 		privateKey = sk.Serialize()
 
-		pubKey := crypto.FromECDSAPub(sk.PubKey().ToECDSA())
-		publicKeyHash = crypto.Keccak256(pubKey) // 65 bytes uncompressed
+		compressed := sk.PubKey().SerializeCompressed() // 33 bytes: 0x02/0x03 || X
+		publicKeyHash = crypto.Keccak256(compressed)
 
 	case MultiShow:
 		sk, err := zkp.EddsaForCircuitKeyGen()

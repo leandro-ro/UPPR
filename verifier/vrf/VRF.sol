@@ -198,10 +198,17 @@ library VRF {
     uint128 c;
     uint256 s;
     assembly {
-      gammaSign := mload(add(_proof, 1))
-	    gammaX := mload(add(_proof, 33))
-      c := mload(add(_proof, 49))
-      s := mload(add(_proof, 81))
+      let ptr := add(_proof, 0x20)         // skip length prefix
+
+    // gamma = [sign byte || X]
+      gammaSign := byte(0, mload(ptr))     // first byte
+      gammaX := mload(add(ptr, 1))         // next 32 bytes
+
+    // c (16 bytes) comes next
+      c := shr(128, mload(add(ptr, 33)))   // load full 32B, shift to get top 16B
+
+    // s (last 32 bytes)
+      s := mload(add(ptr, 49))
     }
     uint256 gammaY = deriveY(gammaSign, gammaX);
 

@@ -123,9 +123,9 @@ library EllipticCurve {
             uint256 _aa,
             uint256 _bb,
             uint256 _pp
-        ) 
-        internal pure 
-        returns (uint256) 
+        )
+        internal pure
+        returns (uint256)
     {
         require(
             _prefix == 0x02 || _prefix == 0x03,

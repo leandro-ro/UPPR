@@ -8,8 +8,8 @@ require (
 	github.com/consensys/gnark-crypto v0.17.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/ethereum/go-ethereum v1.12.0
-	github.com/klayoracle/go-ecvrf v0.0.0-20230712192225-9c382e0409f5
 	github.com/stretchr/testify v1.10.0
+	github.com/vechain/go-ecvrf v0.0.0-20220525125849-96fa0442e765
 )
 
 require (

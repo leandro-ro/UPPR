@@ -3,8 +3,8 @@ package holder
 import (
 	"PrivacyPreservingRevocationCode/issuer"
 	"encoding/binary"
-	"github.com/klayoracle/go-ecvrf"
 	"github.com/stretchr/testify/require"
+	"github.com/vechain/go-ecvrf"
 	"testing"
 	"time"
 )

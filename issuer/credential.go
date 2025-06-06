@@ -9,7 +9,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/klayoracle/go-ecvrf"
+	"github.com/vechain/go-ecvrf"
 	"math/big"
 )
 
@@ -149,13 +149,14 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 	switch ic.Credential.Type {
 	case OneShow:
 		vrf := ecvrf.Secp256k1Sha256Tai
-		vrfSecretKey := secp256k1.PrivKeyFromBytes(ic.VrfKeyPair.PrivateKey)
-		t, p, err := vrf.Prove(vrfSecretKey.ToECDSA(), epoch)
+		ecdsaKey := secp256k1.PrivKeyFromBytes(ic.VrfKeyPair.PrivateKey).ToECDSA()
+
+		t, p, err := vrf.Prove(ecdsaKey, epoch)
 		if err != nil {
 			return nil, nil, err
 		}
-
 		return t, p, nil
+
 	case MultiShow:
 		// Compute revocationToken = Hash(epoch || vrf secret key)
 		hf := mimc.NewMiMC()
