@@ -1,7 +1,6 @@
 package issuer
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -45,18 +44,34 @@ func (c *Credential) Verify(issuerPublicKey []byte) (bool, error) {
 		if len(c.Signature) != 65 {
 			return false, errors.New("signature must be 65 bytes")
 		}
-		recoveredUncompressed, err := crypto.Ecrecover(c.PublicKeyVrfHash, c.Signature)
-		if err != nil {
-			return false, err
-		}
-		// Decompress issuer's public key (33-byte)
-		pubKeyObj, err := crypto.DecompressPubkey(issuerPublicKey)
-		if err != nil {
-			return false, err
-		}
-		issuerUncompressed := crypto.FromECDSAPub(pubKeyObj) // 65 bytes
 
-		return bytes.Equal(recoveredUncompressed, issuerUncompressed), nil
+		sig := make([]byte, len(c.Signature))
+		copy(sig, c.Signature)
+
+		// Reverse the v normalization for Go's crypto.Ecrecover (expects v ∈ {0,1})
+		if sig[64] >= 27 {
+			sig[64] -= 27
+		}
+
+		// Recover uncompressed pubkey (65 bytes) from signature
+		recoveredPubkeyBytes, err := crypto.Ecrecover(c.PublicKeyVrfHash, sig)
+		if err != nil {
+			return false, fmt.Errorf("ecrecover failed: %w", err)
+		}
+
+		recoveredPubkey, err := crypto.UnmarshalPubkey(recoveredPubkeyBytes)
+		if err != nil {
+			return false, fmt.Errorf("failed to unmarshal recovered pubkey: %w", err)
+		}
+		recoveredAddress := crypto.PubkeyToAddress(*recoveredPubkey)
+
+		issuerPubkey, err := crypto.DecompressPubkey(issuerPublicKey)
+		if err != nil {
+			return false, fmt.Errorf("failed to decompress issuer pubkey: %w", err)
+		}
+		issuerAddress := crypto.PubkeyToAddress(*issuerPubkey)
+
+		return recoveredAddress == issuerAddress, nil
 	case MultiShow:
 		issuerPk := eddsa.PublicKey{}
 		_, err := issuerPk.SetBytes(issuerPublicKey)
@@ -187,6 +202,10 @@ func signAttribute(issuerKey []byte, msg []byte, version CredentialType) ([]byte
 		sig, err := crypto.Sign(msg, privKey) // 65 bytes: R || S || V
 		if err != nil {
 			return nil, err
+		}
+
+		if sig[64] < 27 {
+			sig[64] += 27
 		}
 		return sig, nil
 	case MultiShow:

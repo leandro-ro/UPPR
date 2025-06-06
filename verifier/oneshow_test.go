@@ -6,7 +6,6 @@ import (
 	onchainVerifier "PrivacyPreservingRevocationCode/verifier/build"
 	"context"
 	"fmt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/core"
@@ -68,9 +67,9 @@ func TestCompileAndGenBindings(t *testing.T) {
 	fmt.Printf("✅ Generated bindings:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
 }
 
-func TestUpdateAndCheckCredential(t *testing.T) {
-	issuer := issuer.NewIssuer(issuer.OneShow)
-	privKey, err := crypto.ToECDSA(issuer.GetPrivateKey())
+func TestEndToEnd(t *testing.T) {
+	iss := issuer.NewIssuer(issuer.OneShow)
+	privKey, err := crypto.ToECDSA(iss.GetPrivateKey())
 	require.NoError(t, err)
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
@@ -87,12 +86,12 @@ func TestUpdateAndCheckCredential(t *testing.T) {
 	sim.Commit()
 
 	// Deploy verifier contract
-	veriferAddress, _, verifierContract, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr)
+	verifierAddress, _, verifierContract, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr)
 	require.NoError(t, err)
 	sim.Commit()
 
 	// Transfer ownership of Bloom filter to verifier
-	tx, err := bloomContract.TransferOwnership(auth, veriferAddress)
+	tx, err := bloomContract.TransferOwnership(auth, verifierAddress)
 	require.NoError(t, err)
 	sim.Commit()
 	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
@@ -102,13 +101,13 @@ func TestUpdateAndCheckCredential(t *testing.T) {
 	domain := 1000
 	capacity := 100
 
-	err = issuer.IssueCredentials(uint(domain))
+	err = iss.IssueCredentials(uint(domain))
 	require.NoError(t, err)
 
-	err = issuer.RevokeRandomCredentials(uint(capacity))
+	err = iss.RevokeRandomCredentials(uint(capacity))
 	require.NoError(t, err)
 
-	artifact, _, _, epoch, err := issuer.GenRevocationArtifact()
+	artifact, _, _, epoch, err := iss.GenRevocationArtifact()
 	require.NoError(t, err)
 
 	filter, hf, bitlen := artifact.GetOnChainFilter()
@@ -116,15 +115,52 @@ func TestUpdateAndCheckCredential(t *testing.T) {
 	require.NoError(t, err)
 	sim.Commit()
 
-	cred := issuer.GetAllValidCreds()[0]
+	// --- Test valid credentials ---
+	for _, cred := range iss.GetAllValidCreds() {
+		token, _, err := cred.GenRevocationToken(epoch)
+		require.NoError(t, err)
+
+		ok, err := cred.Credential.Verify(iss.GetPublicKey())
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		pubkey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
+		require.NoError(t, err)
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, token.ToBytes())
+		require.NoError(t, err)
+		require.Zero(t, result.ErrorCode, "Expected valid credential, got error code %d", result.ErrorCode)
+		require.True(t, result.Valid, "Expected credential to be valid")
+	}
+
+	// --- Test revoked credentials ---
+	for _, cred := range iss.GetAllRevokedCreds() {
+		token, _, err := cred.GenRevocationToken(epoch)
+		require.NoError(t, err)
+
+		ok, err := cred.Credential.Verify(iss.GetPublicKey())
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		pubkey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
+		require.NoError(t, err)
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, token.ToBytes())
+		require.NoError(t, err)
+		require.Equal(t, uint8(3), result.ErrorCode, "Expected revoked credential (code 3), got %d", result.ErrorCode)
+		require.False(t, result.Valid, "Expected credential to be revoked")
+	}
+
+	otherIss := issuer.NewIssuer(issuer.OneShow)
+	err = otherIss.IssueCredentials(1)
 	require.NoError(t, err)
-	token, _, err := cred.GenRevocationToken(epoch)
+	foreignCred := otherIss.GetAllValidCreds()[0]
+	token, _, err := foreignCred.GenRevocationToken(epoch)
 	require.NoError(t, err)
 
-	compressed := secp256k1.PrivKeyFromBytes(cred.VrfKeyPair.PrivateKey).PubKey().SerializeUncompressed()
-
-	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, compressed, cred.Credential.Signature, token.ToBytes())
+	onchainKey, err := foreignCred.VrfKeyPair.GetPublicKeyForOnChain()
 	require.NoError(t, err)
-	require.Zero(t, result.ErrorCode)
-	require.True(t, result.Valid)
+
+	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, onchainKey, foreignCred.Credential.Signature, token.ToBytes())
+	require.NoError(t, err)
+	require.Equal(t, uint8(2), result.ErrorCode, "Credential from another issuer should fail signature check")
+	require.False(t, result.Valid)
 }

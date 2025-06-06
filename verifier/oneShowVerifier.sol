@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {CascadingBloomFilter} from "bloom/sol/cascadingBloomFilter.sol";
+import "./vrf/VRF.sol";
 
 /// @title OneShowVerifier
 /// @notice Verifies credentials by checking an ECDSA signature on a VRF public key hash and looking up a revocation token in a Bloom filter.
@@ -37,16 +38,24 @@ contract OneShowVerifier {
     ///         1 = invalid signature length,
     ///         2 = signature does not match issuer,
     ///         3 = revoked credential (bloom filter rejected)
+    /// @return pubKeyHash The keccak256(pubKey), for debugging purposes
+    /// @return issuerAddress The issuer address used for signature verification
     function checkCredential(
         bytes calldata pubKey,
         bytes calldata signature,
         bytes calldata token
-    ) external view returns (bool valid, uint8 errorCode) {
-        if (signature.length != 65) {
-            return (false, 1); // Invalid signature length
-        }
+    ) external view returns (
+        bool valid,
+        uint8 errorCode,
+        bytes32 pubKeyHash,
+        address issuerAddress
+    ) {
+        pubKeyHash = keccak256(pubKey);
+        issuerAddress = issuer;
 
-        bytes32 pubKeyHash = keccak256(pubKey);
+        if (signature.length != 65) {
+            return (false, 1, pubKeyHash, issuerAddress); // Invalid signature length
+        }
 
         address recovered = ecrecover(
             pubKeyHash,
@@ -55,14 +64,14 @@ contract OneShowVerifier {
             bytes32(signature[32:64])
         );
         if (recovered != issuer) {
-            return (false, 2); // Signature mismatch
+            return (false, 2, pubKeyHash, issuerAddress); // Signature mismatch
         }
 
         (bool accepted, ) = bloom.testToken(token);
-        if (!accepted) {
-            return (false, 3); // Bloom filter rejection
+        if (accepted) { // If in bloom filter, we have a revoked credential.
+            return (false, 3, pubKeyHash, issuerAddress);
         }
 
-        return (true, 0); // Success
+        return (true, 0, pubKeyHash, issuerAddress); // Success
     }
 }
