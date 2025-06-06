@@ -29,61 +29,12 @@ contract OneShowVerifier {
     }
 
     /// @notice Checks if a credential is valid (not revoked).
-    /// @param pubKey The uncompressed public key (64 bytes: x||y or 65 bytes with prefix)
-    /// @param signature ECDSA signature on the keccak256 hash of the public key
-    /// @param token Revocation token (VRF output)
-    /// @return valid Whether the credential is valid
-    /// @return errorCode A numeric error code:
-    ///         0 = valid,
-    ///         1 = invalid signature length,
-    ///         2 = signature does not match issuer,
-    ///         3 = revoked credential (bloom filter rejected)
-    /// @return pubKeyHash The keccak256(pubKey), for debugging purposes
-    /// @return issuerAddress The issuer address used for signature verification
-    function checkCredential(
-        bytes calldata pubKey,
-        bytes calldata signature,
-        bytes calldata token
-    ) external view returns (
-        bool valid,
-        uint8 errorCode,
-        bytes32 pubKeyHash,
-        address issuerAddress
-    ) {
-        pubKeyHash = keccak256(pubKey);
-        issuerAddress = issuer;
-
-        if (signature.length != 65) {
-            return (false, 1, pubKeyHash, issuerAddress); // Invalid signature length
-        }
-
-        address recovered = ecrecover(
-            pubKeyHash,
-            uint8(signature[64]),
-            bytes32(signature[0:32]),
-            bytes32(signature[32:64])
-        );
-        if (recovered != issuer) {
-            return (false, 2, pubKeyHash, issuerAddress); // Signature mismatch
-        }
-
-        (bool accepted, ) = bloom.testToken(token);
-        if (accepted) { // If in bloom filter, we have a revoked credential.
-            return (false, 3, pubKeyHash, issuerAddress);
-        }
-
-        return (true, 0, pubKeyHash, issuerAddress); // Success
-    }
-
-    /// @notice Checks if a credential is valid (not revoked).
     /// @param pubKey Compressed public key (33 bytes, 0x02/0x03 prefix + X)
     /// @param signature ECDSA signature on the keccak256(pubKey)
     /// @param proof VRF proof [gammaX, gammaY, c, s] as 81 bytes
     /// @param epoch Epoch used as VRF input seed
     /// @return valid Whether the credential is valid
     /// @return errorCode See below
-    /// @return pubKeyHash keccak256(pubKey)
-    /// @return issuerAddress address used for ECDSA recovery
     ///
     /// Error codes:
     /// 0 = success
@@ -91,30 +42,20 @@ contract OneShowVerifier {
     /// 2 = signature mismatch
     /// 3 = invalid VRF proof
     /// 4 = revoked (token found in Bloom filter)
-    function checkCredentialVrfDebug(
+    function checkCredential(
         bytes calldata pubKey,
         bytes calldata signature,
         bytes calldata proof,
         uint256 epoch
-    )
-    external view
-    returns (
+    ) external view returns (
         bool valid,
-        uint8 errorCode,
-        bytes32 pubKeyHash,
-        address issuerAddress,
-        uint256[2] memory pubkeyXY,
-        uint256[4] memory decodedProof,
-        bytes32 token
-    )
-    {
-        pubKeyHash = keccak256(pubKey);
-        issuerAddress = issuer;
-
+        uint8 errorCode
+    ) {
         if (signature.length != 65) {
-            return (false, 1, pubKeyHash, issuerAddress, [uint256(0), 0], [uint256(0), 0, 0, 0], bytes32(0));
+            return (false, 1); // Invalid signature length
         }
 
+        bytes32 pubKeyHash = keccak256(pubKey);
         address recovered = ecrecover(
             pubKeyHash,
             uint8(signature[64]),
@@ -122,11 +63,12 @@ contract OneShowVerifier {
             bytes32(signature[32:64])
         );
         if (recovered != issuer) {
-            return (false, 2, pubKeyHash, issuerAddress, [uint256(0), 0], [uint256(0), 0, 0, 0], bytes32(0));
+            return (false, 2); // Signature mismatch
         }
 
-        pubkeyXY = VRF.decodePoint(pubKey);
-        decodedProof = VRF.decodeProof(proof);
+        uint256[2] memory pubkeyXY = VRF.decodePoint(pubKey);
+        uint256[4] memory decodedProof = VRF.decodeProof(proof);
+
         // Encode epoch as 8-byte big-endian
         bytes memory message = new bytes(8);
         uint256 e = epoch;
@@ -136,16 +78,16 @@ contract OneShowVerifier {
         }
 
         if (!VRF.verify(pubkeyXY, decodedProof, message)) {
-            return (false, 3, pubKeyHash, issuerAddress, pubkeyXY, decodedProof, bytes32(0));
+            return (false, 3); // Invalid VRF proof
         }
 
-        token = VRF.gammaToHash(decodedProof[0], decodedProof[1]);
+        bytes32 token = VRF.gammaToHash(decodedProof[0], decodedProof[1]);
 
         (bool accepted, ) = bloom.testToken(abi.encodePacked(token));
         if (accepted) {
-            return (false, 4, pubKeyHash, issuerAddress, pubkeyXY, decodedProof, token);
+            return (false, 4); // Token found → revoked
         }
 
-        return (true, 0, pubKeyHash, issuerAddress, pubkeyXY, decodedProof, token);
+        return (true, 0); // Success
     }
 }

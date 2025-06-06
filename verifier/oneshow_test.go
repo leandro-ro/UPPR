@@ -117,7 +117,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// --- Test valid credentials ---
 	for _, cred := range iss.GetAllValidCreds() {
-		token, _, err := cred.GenRevocationToken(epoch)
+		_, proof, err := cred.GenRevocationToken(epoch)
 		require.NoError(t, err)
 
 		ok, err := cred.Credential.Verify(iss.GetPublicKey())
@@ -126,7 +126,7 @@ func TestEndToEnd(t *testing.T) {
 
 		pubkey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
 		require.NoError(t, err)
-		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, token.ToBytes())
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, proof, big.NewInt(epoch))
 		require.NoError(t, err)
 		require.Zero(t, result.ErrorCode, "Expected valid credential, got error code %d", result.ErrorCode)
 		require.True(t, result.Valid, "Expected credential to be valid")
@@ -134,7 +134,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// --- Test revoked credentials ---
 	for _, cred := range iss.GetAllRevokedCreds() {
-		token, _, err := cred.GenRevocationToken(epoch)
+		_, proof, err := cred.GenRevocationToken(epoch)
 		require.NoError(t, err)
 
 		ok, err := cred.Credential.Verify(iss.GetPublicKey())
@@ -143,9 +143,10 @@ func TestEndToEnd(t *testing.T) {
 
 		pubkey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
 		require.NoError(t, err)
-		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, token.ToBytes())
+
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, pubkey, cred.Credential.Signature, proof, big.NewInt(epoch))
 		require.NoError(t, err)
-		require.Equal(t, uint8(3), result.ErrorCode, "Expected revoked credential (code 3), got %d", result.ErrorCode)
+		require.Equal(t, uint8(4), result.ErrorCode, "Expected revoked credential (code 3), got %d", result.ErrorCode)
 		require.False(t, result.Valid, "Expected credential to be revoked")
 	}
 
@@ -153,101 +154,14 @@ func TestEndToEnd(t *testing.T) {
 	err = otherIss.IssueCredentials(1)
 	require.NoError(t, err)
 	foreignCred := otherIss.GetAllValidCreds()[0]
-	token, _, err := foreignCred.GenRevocationToken(epoch)
+	_, proof, err := foreignCred.GenRevocationToken(epoch)
 	require.NoError(t, err)
 
 	onchainKey, err := foreignCred.VrfKeyPair.GetPublicKeyForOnChain()
 	require.NoError(t, err)
 
-	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, onchainKey, foreignCred.Credential.Signature, token.ToBytes())
+	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, onchainKey, foreignCred.Credential.Signature, proof, big.NewInt(epoch))
 	require.NoError(t, err)
 	require.Equal(t, uint8(2), result.ErrorCode, "Credential from another issuer should fail signature check")
 	require.False(t, result.Valid)
-}
-
-func TestEndToEndVrf(t *testing.T) {
-	iss := issuer.NewIssuer(issuer.OneShow)
-	privKey, err := crypto.ToECDSA(iss.GetPrivateKey())
-	require.NoError(t, err)
-
-	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
-	require.NoError(t, err)
-
-	alloc := core.GenesisAlloc{
-		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)},
-	}
-	sim := backends.NewSimulatedBackend(alloc, 3_000_000_000)
-
-	// Deploy Bloom filter contract
-	bloomAddr, _, bloomContract, err := onchainBloom.DeployBloom(auth, sim)
-	require.NoError(t, err)
-	sim.Commit()
-
-	// Deploy verifier contract
-	verifierAddress, _, verifierContract, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr)
-	require.NoError(t, err)
-	sim.Commit()
-
-	// Transfer ownership of Bloom filter to verifier
-	tx, err := bloomContract.TransferOwnership(auth, verifierAddress)
-	require.NoError(t, err)
-	sim.Commit()
-	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
-	require.NoError(t, err)
-
-	// Use real issuer
-	domain := 1000
-	capacity := 100
-
-	err = iss.IssueCredentials(uint(domain))
-	require.NoError(t, err)
-
-	err = iss.RevokeRandomCredentials(uint(capacity))
-	require.NoError(t, err)
-
-	artifact, _, _, epoch, err := iss.GenRevocationArtifact()
-	require.NoError(t, err)
-
-	filter, hf, bitlen := artifact.GetOnChainFilter()
-	_, err = verifierContract.Update(auth, filter, hf, bitlen)
-	require.NoError(t, err)
-	sim.Commit()
-
-	cred := iss.GetAllValidCreds()[0]
-	pubkey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
-	require.NoError(t, err)
-
-	_, proof, err := cred.GenRevocationToken(epoch)
-	require.NoError(t, err)
-
-	gammaSign := proof[0]
-	gammaX := new(big.Int).SetBytes(proof[1:33])
-	cBytes := proof[33:49]
-	s := new(big.Int).SetBytes(proof[49:81])
-	c := new(big.Int).SetBytes(cBytes)
-
-	// Reconstruct compressed gamma point (33 bytes)
-	compressedGamma := append([]byte{gammaSign}, proof[1:33]...)
-
-	// Decompress to get gammaY
-	key, _ := crypto.DecompressPubkey(compressedGamma)
-	gammaY := key.Y
-
-	t.Logf("Decoded Proof:")
-	t.Logf("gammaSign: %d", gammaSign)
-	t.Logf("gammaX: %s", gammaX.String())
-	t.Logf("gammaY: %s", gammaY.String())
-	t.Logf("c: %s", c.String())
-	t.Logf("s: %s", s.String())
-
-	pubKeyCheck, _ := cred.VrfKeyPair.GetOneShowPublicKey()
-	t.Logf("Off-Chain PubKeyX: %v", pubKeyCheck.X.String())
-	t.Logf("Off-Chain PubKeyY: %v", pubKeyCheck.Y.String())
-
-	result, err := verifierContract.CheckCredentialVrfDebug(&bind.CallOpts{}, pubkey, cred.Credential.Signature, proof, big.NewInt(epoch))
-	require.NoError(t, err)
-	t.Logf("PubKeyXY: %v", result.PubkeyXY)
-	t.Logf("Proof: %v", result.DecodedProof)
-	t.Logf("Token: %x", result.Token)
-	t.Logf("Result: %v", result)
 }
