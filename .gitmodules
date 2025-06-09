@@ -1,3 +1,0 @@
-[submodule "external/go-ecvrf"]
-	path = external/go-ecvrf
-	url = https://github.com/vechain/go-ecvrf.git
