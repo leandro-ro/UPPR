@@ -5,7 +5,7 @@ import {CascadingBloomFilter} from "bloom/sol/cascadingBloomFilter.sol";
 import "./vrf/VRF.sol";
 
 /// @title OneShowVerifier
-/// @notice Verifies credentials by checking an ECDSA signature on a VRF public key hash and looking up a revocation token in a Bloom filter.
+/// @notice Verifies credentials by checking an ECDSA signature on a VRF public key, reconstructing the VRF output, and querying a Bloom filter for revocation.
 contract OneShowVerifier {
     CascadingBloomFilter public bloom;
     address public issuer;
@@ -20,115 +20,78 @@ contract OneShowVerifier {
         _;
     }
 
-    /// @notice Updates the Bloom filter by delegating to the underlying contract.
+    /// @notice Updates the Bloom filter cascade.
     /// @param newFilters Packed Bloom filter layers
-    /// @param ks Hash function count per layer
-    /// @param bitLens Valid bit lengths per layer
-    function update(bytes[] calldata newFilters, uint256[] calldata ks, uint256[] calldata bitLens) external onlyIssuer {
+    /// @param ks Number of hash functions per layer
+    /// @param bitLens Number of valid bits per layer
+    function update(
+        bytes[] calldata newFilters,
+        uint256[] calldata ks,
+        uint256[] calldata bitLens
+    ) external onlyIssuer {
         bloom.updateCascade(newFilters, ks, bitLens);
     }
 
-    /// @notice Verifies the validity of a credential by checking an ECDSA signature, a VRF proof, and a Bloom filter.
-    /// @dev This function is `view` and free to call from off-chain (e.g. via `eth_call`). On-chain calls consume gas.
-    /// @param pubKey Compressed VRF public key (33 bytes, SEC1 format: 0x02 or 0x03 prefix + X coordinate)
-    /// @param signature ECDSA signature on `keccak256(pubKey)`, signed by the issuer address
-    /// @param proof VRF proof as 81-byte concatenation of gammaX (32), gammaY (32), c (16), s (1–32 padded to 32)
-    /// @param epoch 64-bit epoch value (used as input seed to the VRF, encoded big-endian)
-    /// @return valid `true` if the credential is valid and not revoked, otherwise `false`
-    /// @return errorCode A numeric code indicating the failure reason:
-    ///         0 = success (valid credential)
-    ///         1 = invalid signature length
-    ///         2 = signature mismatch (invalid issuer)
-    ///         3 = VRF proof verification failed
-    ///         4 = token found in Bloom filter (revoked)
+    /// @notice Verifies a credential by checking issuer authenticity, VRF validity, and non-revocation.
+    /// @dev Off-chain calls are gas-free; on-chain usage incurs cost.
+    /// @param pubKey Compressed VRF public key (33 bytes, SEC1 format)
+    /// @param signature ECDSA signature over keccak256(pubKey), signed by the issuer
+    /// @param proof VRF proof (81 bytes)
+    /// @param epoch 64-bit challenge input (big-endian encoded)
+    /// @return valid True if credential is valid and not revoked
+    /// @return errorCode Code in [0–4] indicating the verification result
     function checkCredential(
         bytes calldata pubKey,
         bytes calldata signature,
         bytes calldata proof,
         uint256 epoch
-    ) public view returns (
-        bool valid,
-        uint8 errorCode
-    ) {
-        if (signature.length != 65) {
-            return (false, 1); // Invalid signature length
-        }
+    ) public view returns (bool valid, uint8 errorCode) {
+        if (signature.length != 65) return (false, 1);
 
-        bytes32 pubKeyHash = keccak256(pubKey);
         address recovered = ecrecover(
-            pubKeyHash,
+            keccak256(pubKey),
             uint8(signature[64]),
             bytes32(signature[0:32]),
             bytes32(signature[32:64])
         );
-        if (recovered != issuer) {
-            return (false, 2); // Signature mismatch
-        }
+        if (recovered != issuer) return (false, 2);
 
         uint256[2] memory pubkeyXY = VRF.decodePoint(pubKey);
         uint256[4] memory decodedProof = VRF.decodeProof(proof);
 
-        // Encode epoch as 8-byte big-endian
         bytes memory message = new bytes(8);
-        uint256 e = epoch;
         for (uint8 i = 0; i < 8; i++) {
-            message[7 - i] = bytes1(uint8(e & 0xff));
-            e >>= 8;
+            message[7 - i] = bytes1(uint8(epoch >> (i * 8)));
         }
 
-        if (!VRF.verify(pubkeyXY, decodedProof, message)) {
-            return (false, 3); // Invalid VRF proof
-        }
+        if (!VRF.verify(pubkeyXY, decodedProof, message)) return (false, 3);
 
         bytes32 token = VRF.gammaToHash(decodedProof[0], decodedProof[1]);
+        (bool revoked, ) = bloom.testToken(abi.encodePacked(token));
 
-        (bool accepted, ) = bloom.testToken(abi.encodePacked(token));
-        if (accepted) {
-            return (false, 4); // Token found → revoked
-        }
-
-        return (true, 0); // Success
+        return revoked ? (false, 4) : (true, 0);
     }
 
-    /// @notice Calls `checkCredential` in a state-changing context to allow gas benchmarking via transaction receipts.
-    /// @dev Intended for gas measurement and testing only. Unlike the `view` function, this version consumes gas
-    ///      when invoked from a transaction. The internal logic and result are identical to `checkCredential`.
-    /// @param pubKey Compressed VRF public key (33 bytes, SEC1 format: 0x02 or 0x03 prefix + X coordinate)
-    /// @param signature ECDSA signature on `keccak256(pubKey)`, signed by the issuer address
-    /// @param proof VRF proof as 81-byte concatenation of gammaX (32), gammaY (32), c (16), s (1–32 padded to 32)
-    /// @param epoch 64-bit epoch value (used as input seed to the VRF, encoded big-endian)
-    /// @return valid `true` if the credential is valid and not revoked, otherwise `false`
-    /// @return errorCode A numeric code indicating the failure reason:
-    ///         0 = success (valid credential)
-    ///         1 = invalid signature length
-    ///         2 = signature mismatch (invalid issuer)
-    ///         3 = VRF proof verification failed
-    ///         4 = token found in Bloom filter (revoked)
+    /// @notice Gas-measurable variant of `checkCredential`, intended for benchmarking only.
     function measureCheckCredentialGas(
         bytes calldata pubKey,
         bytes calldata signature,
         bytes calldata proof,
         uint256 epoch
     ) external returns (bool valid, uint8 errorCode) {
-        (valid, errorCode) = checkCredential(pubKey, signature, proof, epoch);
-        return (valid, errorCode);
+        return checkCredential(pubKey, signature, proof, epoch);
     }
 
-/// @notice Checks if a credential is valid (not revoked) using gas-optimized fast VRF verification.
-/// @dev Uses `VRF.fastVerify` with precomputed elliptic curve points to reduce gas cost.
-/// @param pubKey Compressed VRF public key (33 bytes: 0x02/0x03 prefix + X)
-/// @param signature ECDSA signature over keccak256(pubKey), must be 65 bytes
-/// @param proof VRF proof as four 256-bit integers: [gammaX, gammaY, c, s]
-/// @param epoch Epoch input (used to derive VRF message via 8-byte big-endian encoding)
-/// @param uPoint EC point U = s·B − c·Y, required for fast verification
-/// @param vComponents Precomputed data to reconstruct V = s·H − c·Gamma: [Hx, Hy, cGammaX, cGammaY]
-/// @return valid Whether the credential is valid
-/// @return errorCode Status code:
-///         0 = success,
-///         1 = invalid signature length,
-///         2 = signature mismatch,
-///         3 = invalid VRF proof,
-///         4 = credential is revoked (token in Bloom filter)
+    /// @notice Efficient on-chain verification using precomputed elliptic curve data.
+    /// @dev Saves gas by avoiding repeated EC operations.
+    /// @param pubKey Compressed VRF public key (33 bytes)
+    /// @param signature ECDSA signature over keccak256(pubKey)
+    /// @param proof VRF proof: [gammaX, gammaY, c, s]
+    /// @param epoch 64-bit challenge input (big-endian)
+    /// @param uPoint Precomputed U = sB - cY
+    /// @param vComponents Precomputed [Hx, Hy, cGammaX, cGammaY] for V = sH - cGamma
+    /// @return valid True if credential is valid and not revoked
+    /// @return errorCode Code in [0–4] indicating the verification result
     function checkCredentialFast(
         bytes calldata pubKey,
         bytes calldata signature,
@@ -136,66 +99,34 @@ contract OneShowVerifier {
         uint256 epoch,
         uint256[2] calldata uPoint,
         uint256[4] calldata vComponents
-    ) public view returns (
-        bool valid,
-        uint8 errorCode
-    ) {
-        if (signature.length != 65) {
-            return (false, 1); // Invalid signature length
-        }
+    ) public view returns (bool valid, uint8 errorCode) {
+        if (signature.length != 65) return (false, 1);
 
-        bytes32 pubKeyHash = keccak256(pubKey);
         address recovered = ecrecover(
-            pubKeyHash,
+            keccak256(pubKey),
             uint8(signature[64]),
             bytes32(signature[0:32]),
             bytes32(signature[32:64])
         );
-        if (recovered != issuer) {
-            return (false, 2); // Signature mismatch
-        }
+        if (recovered != issuer) return (false, 2);
 
         uint256[2] memory pubkeyXY = VRF.decodePoint(pubKey);
         uint256[4] memory decodedProof = VRF.decodeProof(proof);
 
-        // Encode epoch as 8-byte big-endian
         bytes memory message = new bytes(8);
-        uint256 e = epoch;
         for (uint8 i = 0; i < 8; i++) {
-            message[7 - i] = bytes1(uint8(e & 0xff));
-            e >>= 8;
+            message[7 - i] = bytes1(uint8(epoch >> (i * 8)));
         }
 
-        bool ok = VRF.fastVerify(pubkeyXY, decodedProof, message, uPoint, vComponents);
-        if (!ok) {
-            return (false, 3); // Invalid VRF proof
-        }
+        if (!VRF.fastVerify(pubkeyXY, decodedProof, message, uPoint, vComponents)) return (false, 3);
 
         bytes32 token = VRF.gammaToHash(decodedProof[0], decodedProof[1]);
-        (bool accepted, ) = bloom.testToken(abi.encodePacked(token));
-        if (accepted) {
-            return (false, 4); // Token found → credential revoked
-        }
+        (bool revoked, ) = bloom.testToken(abi.encodePacked(token));
 
-        return (true, 0); // Success
+        return revoked ? (false, 4) : (true, 0);
     }
 
-    /// @notice Calls `checkCredentialFast` in a state-changing context to allow gas benchmarking via transaction receipts.
-    /// @dev Intended for gas measurement and testing only. Unlike the `view` function, this version consumes gas
-    ///      when invoked from a transaction. The internal logic and result are identical to `checkCredentialFast`.
-    /// @param pubKey Compressed VRF public key (33 bytes: 0x02/0x03 prefix + X)
-    /// @param signature ECDSA signature over keccak256(pubKey), must be 65 bytes
-    /// @param proof VRF proof as four 256-bit integers: [gammaX, gammaY, c, s]
-    /// @param epoch Epoch input (used to derive VRF message via 8-byte big-endian encoding)
-    /// @param uPoint EC point U = s·B − c·Y, required for fast verification
-    /// @param vComponents Precomputed data to reconstruct V = s·H − c·Gamma: [Hx, Hy, cGammaX, cGammaY]
-    /// @return valid Whether the credential is valid
-    /// @return errorCode Status code:
-    ///         0 = success,
-    ///         1 = invalid signature length,
-    ///         2 = signature mismatch,
-    ///         3 = invalid VRF proof,
-    ///         4 = credential is revoked (token in Bloom filter)
+    /// @notice Gas-measurable variant of `checkCredentialFast`, intended for benchmarking only.
     function measureCheckCredentialFastGas(
         bytes calldata pubKey,
         bytes calldata signature,
@@ -203,39 +134,28 @@ contract OneShowVerifier {
         uint256 epoch,
         uint256[2] calldata uPoint,
         uint256[4] calldata vComponents
-    ) external returns (
-        bool valid,
-        uint8 errorCode
-    ) {
-        (valid, errorCode) = checkCredentialFast(pubKey, signature, proof, epoch, uPoint, vComponents);
-        return (valid, errorCode);
+    ) external returns (bool valid, uint8 errorCode) {
+        return checkCredentialFast(pubKey, signature, proof, epoch, uPoint, vComponents);
     }
 
-    /// @notice Exposes fast verify parameters to enable off-chain computation for on-chain gas savings.
-    /// @dev Computes `uPoint` and `vComponents` from the given public key, VRF proof, and epoch message.
-    ///      This mirrors the logic used internally in `fastVerify(...)`.
-    /// @param pubKey Compressed VRF public key (33 bytes, SEC1 format)
-    /// @param proof VRF proof as 81 bytes
-    /// @param epoch Epoch input as 64-bit integer
-    /// @return uPoint The EC point U = s·B − c·Y
-    /// @return vComponents The components to reconstruct V = s·H − c·Gamma
+    /// @notice Computes auxiliary EC points required for fast on-chain verification.
+    /// @dev Offloads heavy elliptic curve arithmetic to off-chain clients.
+    /// @param pubKey Compressed VRF public key (33 bytes)
+    /// @param proof VRF proof (81 bytes)
+    /// @param epoch 64-bit epoch input
+    /// @return uPoint EC point U = sB - cY
+    /// @return vComponents [Hx, Hy, cGammaX, cGammaY] for computing V = sH - cGamma
     function getFastVerifyParams(
         bytes calldata pubKey,
         bytes calldata proof,
         uint256 epoch
-    ) external view returns (
-        uint256[2] memory uPoint,
-        uint256[4] memory vComponents
-    ) {
+    ) external view returns (uint256[2] memory uPoint, uint256[4] memory vComponents) {
         uint256[2] memory pubkeyXY = VRF.decodePoint(pubKey);
         uint256[4] memory decodedProof = VRF.decodeProof(proof);
 
-        // Encode epoch as 8-byte big-endian
         bytes memory message = new bytes(8);
-        uint256 e = epoch;
         for (uint8 i = 0; i < 8; i++) {
-            message[7 - i] = bytes1(uint8(e & 0xff));
-            e >>= 8;
+            message[7 - i] = bytes1(uint8(epoch >> (i * 8)));
         }
 
         return VRF.computeFastVerifyParams(pubkeyXY, decodedProof, message);
