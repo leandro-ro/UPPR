@@ -1,4 +1,4 @@
-package verifier_test
+package verifier
 
 import (
 	onchainBloom "PrivacyPreservingRevocationCode/bloom/sol/build"
@@ -164,4 +164,124 @@ func TestEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint8(2), result.ErrorCode, "Credential from another issuer should fail signature check")
 	require.False(t, result.Valid)
+}
+
+// BenchmarkCheckCredential benchmarks the average gas cost for verifying a credential.
+func BenchmarkCheckCredential(b *testing.B) {
+	configs := []struct {
+		name     string
+		domain   int
+		capacity int
+	}{
+		{"D1k_C100", 1_000, 100},
+		{"D10k_C1k", 10_000, 1_000},
+		{"D100k_C10k", 100_000, 10_000},
+		{"D1M_C100k", 1_000_000, 100_000},
+	}
+
+	fmt.Println("Benchmark Gas Consumption of CheckCredential (N = 10 credentials):")
+	fmt.Println("| Domain   | Capacity | Avg Gas Used | ETH (1 Gwei) |")
+	fmt.Println("|----------|----------|--------------|--------------|")
+
+	for _, cfg := range configs {
+		avgGas, err := runOneShowBenchmark(cfg.domain, cfg.capacity)
+		if err != nil {
+			b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
+		}
+
+		ethCost := float64(avgGas) * 1e-9 // gas price = 1 Gwei
+		fmt.Printf("| %8d | %8d | %12d | %.9f |\n", cfg.domain, cfg.capacity, avgGas, ethCost)
+	}
+}
+
+// runOneShowBenchmark runs CheckCredential 10x on valid credentials and returns the average gas used.
+func runOneShowBenchmark(domain, capacity int) (uint64, error) {
+	issuer := issuer.NewIssuer(issuer.OneShow)
+	privKey, err := crypto.ToECDSA(issuer.GetPrivateKey())
+	if err != nil {
+		return 0, err
+	}
+	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
+	if err != nil {
+		return 0, err
+	}
+
+	alloc := core.GenesisAlloc{
+		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+	}
+	sim := backends.NewSimulatedBackend(alloc, 30_000_000_000)
+
+	bloomAddr, _, bloomContract, err := onchainBloom.DeployBloom(auth, sim)
+	if err != nil {
+		return 0, err
+	}
+	sim.Commit()
+
+	verifierAddr, _, verifier, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr)
+	if err != nil {
+		return 0, err
+	}
+	sim.Commit()
+
+	tx, err := bloomContract.TransferOwnership(auth, verifierAddr)
+	if err != nil {
+		return 0, err
+	}
+	sim.Commit()
+	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		return 0, err
+	}
+
+	err = issuer.IssueCredentials(uint(domain))
+	if err != nil {
+		return 0, err
+	}
+	err = issuer.RevokeRandomCredentials(uint(capacity))
+	if err != nil {
+		return 0, err
+	}
+
+	artifact, _, _, epoch, err := issuer.GenRevocationArtifact()
+	if err != nil {
+		return 0, err
+	}
+
+	filter, ks, lens := artifact.GetOnChainFilter()
+	_, err = verifier.Update(auth, filter, ks, lens)
+	if err != nil {
+		return 0, err
+	}
+	sim.Commit()
+
+	validCreds := issuer.GetAllValidCreds()
+	n := 10 // We test 10 random valid credentials
+	if len(validCreds) < n {
+		return 0, fmt.Errorf("expected %d valid creds, got %d", n, len(validCreds))
+	}
+
+	var totalGas uint64
+	for i := 0; i < n; i++ {
+		cred := validCreds[i]
+		_, proof, err := cred.GenRevocationToken(epoch)
+		if err != nil {
+			return 0, err
+		}
+		pubKey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
+		if err != nil {
+			return 0, err
+		}
+		tx, err := verifier.MeasureCheckCredentialGas(auth, pubKey, cred.Credential.Signature, proof, big.NewInt(epoch))
+		if err != nil {
+			return 0, err
+		}
+		sim.Commit()
+		receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
+		if err != nil {
+			return 0, err
+		}
+		totalGas += receipt.GasUsed
+	}
+
+	return totalGas / uint64(n), nil
 }
