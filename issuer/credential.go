@@ -9,7 +9,7 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/vechain/go-ecvrf"
+	"github.com/leandro-ro/go-ecvrf"
 	"math/big"
 )
 

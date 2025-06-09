@@ -9,7 +9,7 @@ require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
 	github.com/ethereum/go-ethereum v1.12.0
 	github.com/stretchr/testify v1.10.0
-	github.com/vechain/go-ecvrf v0.0.0-20220525125849-96fa0442e765
+	github.com/leandro-ro/go-ecvrf v0.0.0
 )
 
 require (
@@ -81,4 +81,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/vechain/go-ecvrf => ./external/go-ecvrf
+replace github.com/leandro-ro/go-ecvrf => ./external/go-ecvrf
