@@ -113,7 +113,6 @@ contract OneShowVerifier {
         (valid, errorCode) = checkCredential(pubKey, signature, proof, epoch);
         return (valid, errorCode);
     }
-}
 
 /// @notice Checks if a credential is valid (not revoked) using gas-optimized fast VRF verification.
 /// @dev Uses `VRF.fastVerify` with precomputed elliptic curve points to reduce gas cost.
@@ -179,3 +178,4 @@ contract OneShowVerifier {
 
         return (true, 0); // Success
     }
+}
