@@ -1,6 +1,7 @@
 package zkp
 
 import (
+	"context"
 	"encoding/binary"
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -8,7 +9,14 @@ import (
 	bn254ted "github.com/consensys/gnark-crypto/ecc/bn254/twistededwards"
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	eddsaInCicuit "github.com/consensys/gnark/std/signature/eddsa"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -97,4 +105,37 @@ func GenCurrentRevocationToken(vrfSecretKey []byte) (token *big.Int, epoch []byt
 	}
 	revocationToken := hf.Sum(nil)
 	return new(big.Int).SetBytes(revocationToken), epoch, nil
+}
+
+// DeployVerifier deploys a zkSNARK Verifier contract to a simulated Ethereum backend and returns its address, ABI, gas used, and error.
+func DeployVerifier(auth *bind.TransactOpts, backend *backends.SimulatedBackend) (common.Address, abi.ABI, uint64, error) {
+	binPath := filepath.Join("build", "Verifier.bin")
+	abiPath := filepath.Join("build", "Verifier.abi")
+
+	binData, err := os.ReadFile(binPath)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+	abiData, err := os.ReadFile(abiPath)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	parsedABI, err := abi.JSON(strings.NewReader(string(abiData)))
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	address, tx, _, err := bind.DeployContract(auth, parsedABI, common.FromHex(string(binData)), backend)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+	backend.Commit()
+
+	receipt, err := backend.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	return address, parsedABI, receipt.GasUsed, nil
 }

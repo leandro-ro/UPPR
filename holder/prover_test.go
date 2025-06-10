@@ -45,7 +45,7 @@ func TestProver_MultiShow(t *testing.T) {
 	require.NoError(t, err)
 
 	epochUnix := time.Now().UTC().Unix()
-	proof, witness, err := prover.GenProof(cred, epochUnix)
+	proof, _, witness, _, err := prover.GenProof(cred, epochUnix)
 	require.NoError(t, err)
 	require.NotNil(t, proof)
 	require.NotNil(t, witness)
@@ -92,7 +92,7 @@ func BenchmarkProver_GenProof_MultiShow(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, err := prover.GenProof(cred, epochUnix)
+		_, _, _, _, err := prover.GenProof(cred, epochUnix)
 		if err != nil {
 			b.Fatalf("GenProof failed: %v", err)
 		}

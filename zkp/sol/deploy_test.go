@@ -11,10 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -29,7 +26,6 @@ import (
 	edddsaInCircuit "github.com/consensys/gnark/std/signature/eddsa"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -49,7 +45,8 @@ func TestVerifierProofEndToEnd(t *testing.T) {
 		10_000_000,
 	)
 
-	addr, parsedABI, _ := deployVerifierContractWithGas(t, auth, backend)
+	addr, parsedABI, _, err := zkp.DeployVerifier(auth, backend)
+	require.NoError(t, err)
 
 	var circuit zkp.RevocationTokenProof
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
@@ -100,7 +97,8 @@ func BenchmarkVerifierGasCosts(b *testing.B) {
 			10_000_000,
 		)
 
-		addr, parsedABI, deployGas := deployVerifierContractWithGas(b, auth, backend)
+		addr, parsedABI, deployGas, err := zkp.DeployVerifier(auth, backend)
+		require.NoError(b, err)
 		totalDeployGas += deployGas
 
 		var circuit zkp.RevocationTokenProof
@@ -143,38 +141,6 @@ func BenchmarkVerifierGasCosts(b *testing.B) {
 	fmt.Println("|-------------------|--------------|------------------|")
 	fmt.Printf("| Contract Deploy   | %12d | %.9f ETH |\n", avgDeployGas, float64(avgDeployGas)*1e-9)
 	fmt.Printf("| verifyProof()     | %12d | %.9f ETH |\n", avgVerifyGas, float64(avgVerifyGas)*1e-9)
-}
-
-// compileSolidityContract compiles the verifier contract using solc
-func compileSolidityContract(solFile string) (binPath, abiPath string, err error) {
-	cmd := exec.Command("solc", "--bin", "--overwrite", "--abi", "--evm-version", "istanbul", solFile, "-o", "build")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", "", fmt.Errorf("solc failed: %v\n%s", err, out)
-	}
-	contractName := "Verifier"
-	return filepath.Join("build", contractName+".bin"), filepath.Join("build", contractName+".abi"), nil
-}
-
-func deployVerifierContractWithGas(t testing.TB, auth *bind.TransactOpts, backend *backends.SimulatedBackend) (common.Address, abi.ABI, uint64) {
-	binPath, abiPath, err := compileSolidityContract("revocationTokenVerifier.sol")
-	require.NoError(t, err)
-
-	binData, err := os.ReadFile(binPath)
-	require.NoError(t, err)
-	abiData, err := os.ReadFile(abiPath)
-	require.NoError(t, err)
-
-	parsedABI, err := abi.JSON(strings.NewReader(string(abiData)))
-	require.NoError(t, err)
-
-	address, tx, _, err := bind.DeployContract(auth, parsedABI, common.FromHex(string(binData)), backend)
-	require.NoError(t, err)
-	backend.Commit()
-
-	receipt, err := backend.TransactionReceipt(context.Background(), tx.Hash())
-	require.NoError(t, err)
-
-	return address, parsedABI, receipt.GasUsed
 }
 
 func parseGroth16ProofToInputs(proof groth16.Proof) [8]*big.Int {

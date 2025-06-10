@@ -1,9 +1,9 @@
-package verifier
+package oneshow
 
 import (
 	onchainBloom "PrivacyPreservingRevocationCode/bloom/sol/build"
 	"PrivacyPreservingRevocationCode/issuer"
-	onchainVerifier "PrivacyPreservingRevocationCode/verifier/build"
+	onchainVerifier "PrivacyPreservingRevocationCode/verifier/oneshow/build"
 	"context"
 	"fmt"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-/*func TestCompileAndGenBindings(t *testing.T) {
+/*func TestOneShow_CompileAndGenBindings(t *testing.T) {
 	buildDir := "build"
 	solFile := "OneShowVerifier.sol"
 
@@ -32,7 +32,7 @@ import (
 		"--overwrite",
 		"--evm-version", "istanbul",
 		"--via-ir",
-		"--base-path", "../", // point to project root
+		"--base-path", "../../", // point to project root
 		solFile,
 		"-o", buildDir,
 	)
@@ -61,10 +61,11 @@ import (
 	require.NoErrorf(t, err, "abigen failed: %v\n%s", err, string(abigenOut))
 	require.FileExists(t, bindingPath, "binding file not created")
 
-	fmt.Printf("✅ Generated bindings:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
-}*/
+	fmt.Printf("Generated bindings:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
+}
+*/
 
-func TestEndToEnd(t *testing.T) {
+func TestOneShow_EndToEnd(t *testing.T) {
 	iss := issuer.NewIssuer(issuer.OneShow)
 	privKey, err := crypto.ToECDSA(iss.GetPrivateKey())
 	require.NoError(t, err)
@@ -163,7 +164,7 @@ func TestEndToEnd(t *testing.T) {
 	require.False(t, result.Valid)
 }
 
-func TestEndToEndFast(t *testing.T) {
+func TestOneShow_EndToEndFast(t *testing.T) {
 	iss := issuer.NewIssuer(issuer.OneShow)
 	privKey, err := crypto.ToECDSA(iss.GetPrivateKey())
 	require.NoError(t, err)
@@ -272,12 +273,13 @@ func TestEndToEndFast(t *testing.T) {
 	require.False(t, result.Valid)
 }
 
-func BenchmarkPrecomputeFastParams(b *testing.B) {
+// BenchmarkOneShow_PrecomputeFastParams benchmarks the generation of fast verification parameters off-chain.
+func BenchmarkOneShow_PrecomputeFastParams(b *testing.B) {
 	domain := 10_000
 	capacity := 1_000
 
-	issuer := issuer.NewIssuer(issuer.OneShow)
-	privKey, err := crypto.ToECDSA(issuer.GetPrivateKey())
+	testIssuer := issuer.NewIssuer(issuer.OneShow)
+	privKey, err := crypto.ToECDSA(testIssuer.GetPrivateKey())
 	if err != nil {
 		b.Fatalf("Failed to get private key: %v", err)
 	}
@@ -314,14 +316,14 @@ func BenchmarkPrecomputeFastParams(b *testing.B) {
 		b.Fatalf("Failed to get tx receipt: %v", err)
 	}
 
-	if err := issuer.IssueCredentials(uint(domain)); err != nil {
+	if err := testIssuer.IssueCredentials(uint(domain)); err != nil {
 		b.Fatalf("IssueCredentials failed: %v", err)
 	}
-	if err := issuer.RevokeRandomCredentials(uint(capacity)); err != nil {
+	if err := testIssuer.RevokeRandomCredentials(uint(capacity)); err != nil {
 		b.Fatalf("RevokeRandomCredentials failed: %v", err)
 	}
 
-	artifact, _, _, epoch, err := issuer.GenRevocationArtifact()
+	artifact, _, _, epoch, err := testIssuer.GenRevocationArtifact()
 	if err != nil {
 		b.Fatalf("GenRevocationArtifact failed: %v", err)
 	}
@@ -333,7 +335,7 @@ func BenchmarkPrecomputeFastParams(b *testing.B) {
 	}
 	sim.Commit()
 
-	validCreds := issuer.GetAllValidCreds()
+	validCreds := testIssuer.GetAllValidCreds()
 	if len(validCreds) == 0 {
 		b.Fatalf("No valid credentials found")
 	}
@@ -358,8 +360,8 @@ func BenchmarkPrecomputeFastParams(b *testing.B) {
 	}
 }
 
-// BenchmarkCheckCredential benchmarks the average gas cost for verifying a credential.
-func BenchmarkGasCheckCredential(b *testing.B) {
+// BenchmarkOneShow_GasCheckCredential benchmarks the average gas cost for verifying a credential.
+func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 	configs := []struct {
 		name     string
 		domain   int
@@ -398,8 +400,8 @@ func BenchmarkGasCheckCredential(b *testing.B) {
 
 // runOneShowBenchmark runs CheckCredential on valid credentials and returns the average gas used.
 func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
-	issuer := issuer.NewIssuer(issuer.OneShow)
-	privKey, err := crypto.ToECDSA(issuer.GetPrivateKey())
+	testIssuer := issuer.NewIssuer(issuer.OneShow)
+	privKey, err := crypto.ToECDSA(testIssuer.GetPrivateKey())
 	if err != nil {
 		return 0, err
 	}
@@ -435,16 +437,16 @@ func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
 		return 0, err
 	}
 
-	err = issuer.IssueCredentials(uint(domain))
+	err = testIssuer.IssueCredentials(uint(domain))
 	if err != nil {
 		return 0, err
 	}
-	err = issuer.RevokeRandomCredentials(uint(capacity))
+	err = testIssuer.RevokeRandomCredentials(uint(capacity))
 	if err != nil {
 		return 0, err
 	}
 
-	artifact, _, _, epoch, err := issuer.GenRevocationArtifact()
+	artifact, _, _, epoch, err := testIssuer.GenRevocationArtifact()
 	if err != nil {
 		return 0, err
 	}
@@ -456,7 +458,7 @@ func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
 	}
 	sim.Commit()
 
-	validCreds := issuer.GetAllValidCreds()
+	validCreds := testIssuer.GetAllValidCreds()
 	n := 10 // We test 10 random valid credentials
 	if len(validCreds) < n {
 		return 0, fmt.Errorf("expected %d valid creds, got %d", n, len(validCreds))
