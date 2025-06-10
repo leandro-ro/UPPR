@@ -41,10 +41,6 @@ func TestVerifier_CompileAndGenBindings(t *testing.T) {
 	buildDir := "build"
 	solFile := "RevocationTokenVerifier.sol"
 
-	// Clean and create build directory
-	_ = os.RemoveAll(buildDir)
-	require.NoError(t, os.MkdirAll(buildDir, 0755), "failed to create build dir")
-
 	// Compile Solidity file with solc
 	cmd := exec.Command(
 		"solc",
@@ -102,7 +98,7 @@ func TestVerifierProofEndToEnd(t *testing.T) {
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	require.NoError(t, err)
 
-	pkFile, err := os.Open("build/verifer.g16.pk")
+	pkFile, err := os.Open("build/verifier.g16.pk")
 	require.NoError(t, err)
 	defer pkFile.Close()
 	pk := groth16.NewProvingKey(ecc.BN254)
