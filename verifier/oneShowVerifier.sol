@@ -40,6 +40,7 @@ contract OneShowVerifier {
     /// @param epoch 64-bit challenge input (big-endian encoded)
     /// @return valid True if credential is valid and not revoked
     /// @return errorCode Code in [0–4] indicating the verification result
+    /// (0: success, 1: signature format invalid, 2: signature invalid, 3: VRF verification failed, 4: revoked)
     function checkCredential(
         bytes calldata pubKey,
         bytes calldata signature,
@@ -92,6 +93,7 @@ contract OneShowVerifier {
     /// @param vComponents Precomputed [Hx, Hy, cGammaX, cGammaY] for V = sH - cGamma
     /// @return valid True if credential is valid and not revoked
     /// @return errorCode Code in [0–4] indicating the verification result
+    /// (0: success, 1: signature format invalid, 2: signature invalid, 3: VRF verification failed, 4: revoked)
     function checkCredentialFast(
         bytes calldata pubKey,
         bytes calldata signature,
