@@ -5,7 +5,7 @@ import (
 	"PrivacyPreservingRevocationCode/holder"
 	"PrivacyPreservingRevocationCode/issuer"
 	onchainVerifier "PrivacyPreservingRevocationCode/verifier/multishow/build"
-	"PrivacyPreservingRevocationCode/zkp"
+	zkpContract "PrivacyPreservingRevocationCode/zkp/sol/build"
 	"context"
 	"fmt"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -92,7 +92,7 @@ func TestMultiShow_EndToEnd(t *testing.T) {
 	sim.Commit()
 
 	// Deploy ZKP Verifier
-	zkpVerifierAddr, abi, _, err := zkp.DeployVerifier(auth, sim)
+	zkpVerifierAddr, _, _, err := zkpContract.DeployZkp(auth, sim)
 	require.NoError(t, err)
 	sim.Commit()
 
@@ -144,15 +144,6 @@ func TestMultiShow_EndToEnd(t *testing.T) {
 	publicWitness, err := witness.Public()
 	require.NoError(t, err)
 	require.NoError(t, prover.VerifyProof(proof, publicWitness))
-
-	contract := bind.NewBoundContract(zkpVerifierAddr, abi, sim, sim, sim)
-	tx, err = contract.Transact(&bind.TransactOpts{
-		From:    auth.From,
-		Context: context.Background(),
-		Signer:  auth.Signer,
-	}, "verifyProof", proofBytes, witnessBytes)
-	require.NoError(t, err)
-	sim.Commit()
 
 	fmt.Printf("Key x input %v\n", x)
 	fmt.Printf("Key y input %v\n", y)

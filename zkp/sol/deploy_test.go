@@ -2,16 +2,21 @@ package zkp
 
 import (
 	"PrivacyPreservingRevocationCode/zkp"
+	zkpContract "PrivacyPreservingRevocationCode/zkp/sol/build"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/consensys/gnark/backend/witness"
-	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc"
@@ -28,25 +33,70 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 )
+
+func TestVerifier_CompileAndGenBindings(t *testing.T) {
+	buildDir := "build"
+	solFile := "RevocationTokenVerifier.sol"
+
+	// Clean and create build directory
+	_ = os.RemoveAll(buildDir)
+	require.NoError(t, os.MkdirAll(buildDir, 0755), "failed to create build dir")
+
+	// Compile Solidity file with solc
+	cmd := exec.Command(
+		"solc",
+		"--bin",
+		"--abi",
+		"--overwrite",
+		"--evm-version", "istanbul",
+		solFile,
+		"-o", buildDir,
+	)
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "solc failed: %v\n%s", err, string(out))
+
+	// Extract contract name
+	contractName := "Verifier"
+
+	// Paths to output files
+	binPath := filepath.Join(buildDir, contractName+".bin")
+	abiPath := filepath.Join(buildDir, contractName+".abi")
+	require.FileExists(t, binPath, "missing bin file")
+	require.FileExists(t, abiPath, "missing abi file")
+
+	// Generate Go bindings
+	bindingPath := filepath.Join(buildDir, strings.ToLower(contractName)+"_binding.go")
+	abigenCmd := exec.Command(
+		"abigen",
+		"--abi="+abiPath,
+		"--bin="+binPath,
+		"--pkg=zkp",
+		"--out="+bindingPath,
+	)
+	abigenOut, err := abigenCmd.CombinedOutput()
+	require.NoErrorf(t, err, "abigen failed: %v\n%s", err, string(abigenOut))
+	require.FileExists(t, bindingPath, "binding file not created")
+
+	fmt.Printf("Generated bindings:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
+}
 
 func TestVerifierProofEndToEnd(t *testing.T) {
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	auth, err := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1337))
 	require.NoError(t, err)
-	backend := backends.NewSimulatedBackend(
-		map[common.Address]core.GenesisAccount{
-			crypto.PubkeyToAddress(key.PublicKey): {Balance: big.NewInt(1e18)},
-		},
-		10_000_000,
-	)
 
-	addr, parsedABI, _, err := zkp.DeployVerifier(auth, backend)
+	alloc := core.GenesisAlloc{
+		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+	}
+	sim := backends.NewSimulatedBackend(alloc, 3_000_000_000)
+
+	_, _, contract, err := zkpContract.DeployZkp(auth, sim)
 	require.NoError(t, err)
+	sim.Commit()
 
 	var circuit zkp.RevocationTokenProof
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
@@ -65,18 +115,9 @@ func TestVerifierProofEndToEnd(t *testing.T) {
 
 	p := parseGroth16ProofToInputs(proof)
 
-	contract := bind.NewBoundContract(addr, parsedABI, backend, backend, backend)
-	tx, err := contract.Transact(&bind.TransactOpts{
-		From:    auth.From,
-		Context: context.Background(),
-		Signer:  auth.Signer,
-	}, "verifyProof", p, pubInputs)
+	err = contract.VerifyProof(&bind.CallOpts{}, p, pubInputs)
 	require.NoError(t, err)
-	backend.Commit()
-
-	receipt, err := backend.TransactionReceipt(context.Background(), tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+	sim.Commit()
 }
 
 func BenchmarkVerifierGasCosts(b *testing.B) {
@@ -97,7 +138,7 @@ func BenchmarkVerifierGasCosts(b *testing.B) {
 			10_000_000,
 		)
 
-		addr, parsedABI, deployGas, err := zkp.DeployVerifier(auth, backend)
+		addr, parsedABI, deployGas, err := deployVerifier(auth, backend)
 		require.NoError(b, err)
 		totalDeployGas += deployGas
 
@@ -164,7 +205,7 @@ func parseGroth16ProofToInputs(proof groth16.Proof) [8]*big.Int {
 }
 
 // generateTestAssignment generates a valid proof assignment and returns the witness and public inputs
-func generateTestAssignment(t testing.TB) (witness.Witness, []*big.Int) {
+func generateTestAssignment(t testing.TB) (witness.Witness, [4]*big.Int) {
 	issuerSk, err := bn254eddsa.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	vrfKey, err := zkp.EddsaForCircuitKeyGen()
@@ -225,7 +266,7 @@ func generateTestAssignment(t testing.TB) (witness.Witness, []*big.Int) {
 	epochFloat := parsed["Epoch"].(float64)
 	epochBig := big.NewInt(int64(epochFloat))
 
-	pinput := []*big.Int{
+	pinput := [4]*big.Int{
 		x,
 		y,
 		rt,
@@ -233,4 +274,37 @@ func generateTestAssignment(t testing.TB) (witness.Witness, []*big.Int) {
 	}
 
 	return witness, pinput
+}
+
+// DeployVerifier deploys a zkSNARK Verifier contract to a simulated Ethereum backend and returns its address, ABI, gas used, and error.
+func deployVerifier(auth *bind.TransactOpts, backend *backends.SimulatedBackend) (common.Address, abi.ABI, uint64, error) {
+	binPath := filepath.Join("build", "Verifier.bin")
+	abiPath := filepath.Join("build", "Verifier.abi")
+
+	binData, err := os.ReadFile(binPath)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+	abiData, err := os.ReadFile(abiPath)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	parsedABI, err := abi.JSON(strings.NewReader(string(abiData)))
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	address, tx, _, err := bind.DeployContract(auth, parsedABI, common.FromHex(string(binData)), backend)
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+	backend.Commit()
+
+	receipt, err := backend.TransactionReceipt(context.Background(), tx.Hash())
+	if err != nil {
+		return common.Address{}, abi.ABI{}, 0, err
+	}
+
+	return address, parsedABI, receipt.GasUsed, nil
 }
