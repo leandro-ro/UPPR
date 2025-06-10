@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"math/big"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -37,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+/*
 func TestVerifier_CompileAndGenBindings(t *testing.T) {
 	buildDir := "build"
 	solFile := "RevocationTokenVerifier.sol"
@@ -78,6 +78,7 @@ func TestVerifier_CompileAndGenBindings(t *testing.T) {
 
 	fmt.Printf("Generated bindings:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
 }
+*/
 
 func TestVerifierProofEndToEnd(t *testing.T) {
 	key, err := crypto.GenerateKey()

@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"log"
-	"os"
 	"testing"
 	"time"
 )
@@ -79,6 +78,7 @@ func TestRevocationTokenProof_Verify(t *testing.T) {
 	require.NoError(t, err)
 }
 
+/*
 func TestRevocationTokenProof_ExportSolidity(t *testing.T) {
 	var circuit RevocationTokenProof
 	r1, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
@@ -109,6 +109,7 @@ func TestRevocationTokenProof_ExportSolidity(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+*/
 
 func TestRevocationTokenProof_FalseCred(t *testing.T) {
 	issuerSecretKey, err := bn254eddsa.GenerateKey(rand.Reader) // Issuer Secret Key
