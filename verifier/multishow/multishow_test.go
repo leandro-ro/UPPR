@@ -131,21 +131,32 @@ func TestMultiShow_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	sim.Commit()
 
-	validTestCred := testIssuer.GetAllValidCreds()[0]
 	prover, err := holder.NewRevocationTokenProver("../../zkp/sol/build/verifier.g16.pk", "../../zkp/sol/build/verifier.g16.vk")
 	require.NoError(t, err)
 
-	proof, proofBytes, witness, witnessBytes, err := prover.GenProof(*validTestCred, epoch)
-	require.NoError(t, err)
-	require.NotNil(t, proof)
-	require.NotNil(t, witness)
+	// --- Test valid credentials ---
+	for _, cred := range testIssuer.GetAllValidCreds() {
+		proof, proofBytes, witness, witnessBytes, err := prover.GenProof(*cred, epoch)
+		require.NoError(t, err)
+		require.NotNil(t, proof)
+		require.NotNil(t, witness)
 
-	publicWitness, err := witness.Public()
-	require.NoError(t, err)
-	require.NoError(t, prover.VerifyProof(proof, publicWitness))
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[2], witnessBytes[3])
+		require.NoError(t, err)
+		require.Zero(t, result.ErrorCode, "CheckCredential: Expected valid credential, got error code %d", result.ErrorCode)
+		require.True(t, result.Valid, "CheckCredential: Expected credential to be valid")
+	}
 
-	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[2], witnessBytes[3])
-	require.NoError(t, err)
-	require.Zero(t, result.ErrorCode, "CheckCredential: Expected valid credential, got error code %d", result.ErrorCode)
-	require.True(t, result.Valid, "CheckCredential: Expected credential to be valid")
+	// --- Test revoked credentials ---
+	for _, cred := range testIssuer.GetAllRevokedCreds() {
+		proof, proofBytes, witness, witnessBytes, err := prover.GenProof(*cred, epoch)
+		require.NoError(t, err)
+		require.NotNil(t, proof)
+		require.NotNil(t, witness)
+
+		result, err := verifierContract.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[2], witnessBytes[3])
+		require.NoError(t, err)
+		require.Equal(t, uint8(2), result.ErrorCode, "CheckCredential: Expected revoked credential (code 2), got %d", result.ErrorCode)
+		require.False(t, result.Valid, "CheckCredential: Expected credential to be revoked")
+	}
 }
