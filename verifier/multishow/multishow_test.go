@@ -168,13 +168,17 @@ func BenchmarkMultiShow_GasCheckCredential(b *testing.B) {
 		domain   int
 		capacity int
 	}{
+		{"D1k_C50", 1_000, 50},
 		{"D1k_C100", 1_000, 100},
+		{"D10k_C500", 10_000, 500},
 		{"D10k_C1k", 10_000, 1_000},
+		{"D100k_C5k", 100_000, 5_000},
 		{"D100k_C10k", 100_000, 10_000},
+		{"D100k_C50k", 1_000_000, 50_000},
 		{"D1M_C100k", 1_000_000, 100_000},
 	}
 
-	fmt.Println("Benchmark Gas Consumption of MultiShow CheckCredential (N = 100 credentials):")
+	fmt.Println("Benchmark Gas Consumption of MultiShow CheckCredential (N = 500 credentials):")
 	fmt.Println("| Domain   | Capacity | Avg Gas Used | ETH (1 Gwei) |")
 	fmt.Println("|----------|----------|--------------|--------------|")
 
@@ -275,9 +279,10 @@ func runMultiShowBenchmark(domain, capacity int) (uint64, error) {
 		return 0, err
 	}
 
-	// Use first 100 valid credentials
+	// Use first 500 valid credentials
 	validCreds := testIssuer.GetAllValidCreds()
-	n := 100
+	n := 500
+
 	if len(validCreds) < n {
 		return 0, fmt.Errorf("expected at least %d valid credentials", n)
 	}

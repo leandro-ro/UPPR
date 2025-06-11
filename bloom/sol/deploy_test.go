@@ -215,8 +215,8 @@ func TestUpdate(t *testing.T) {
 }
 
 func BenchmarkTestTokenByLayer(b *testing.B) {
-	const domain = 1_000_000
-	const capacity = 100_000
+	const domain = 100_000
+	const capacity = 10_000
 
 	privKey, err := crypto.GenerateKey()
 	require.NoError(b, err)
@@ -306,8 +306,8 @@ func BenchmarkUpdateCascade(b *testing.B) {
 
 	for _, cfg := range configs {
 		var sumGas1, sumGas2 uint64
-
-		for i := 0; i < 10; i++ {
+		N := 10
+		for i := 0; i < N; i++ {
 			gas1, gas2, err := runUpdateCascadeBenchmark(cfg.domain, cfg.capacity)
 			if err != nil {
 				b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
@@ -316,8 +316,8 @@ func BenchmarkUpdateCascade(b *testing.B) {
 			sumGas2 += gas2
 		}
 
-		avgGas1 := sumGas1 / 10
-		avgGas2 := sumGas2 / 10
+		avgGas1 := sumGas1 / uint64(N)
+		avgGas2 := sumGas2 / uint64(N)
 		eth1 := float64(avgGas1) * 1e-9 // Assume gas price of 1 Gwei
 		eth2 := float64(avgGas2) * 1e-9
 

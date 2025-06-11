@@ -369,13 +369,18 @@ func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 		capacity int
 		fast     bool
 	}{
+
+		{"D1k_C50_Fast", 1_000, 50, true},   // we dont benchmark slow
 		{"D1k_C100_Fast", 1_000, 100, true}, // we dont benchmark slow
+		{"D10k_C500_Fast", 10_000, 500, true},
 		{"D10k_C1k_Fast", 10_000, 1_000, true},
+		{"D100k_C5k_Fast", 100_000, 5_000, true},
 		{"D100k_C10k_Fast", 100_000, 10_000, true},
+		{"D1M_C50k_Fast", 1_000_000, 50_000, true},
 		{"D1M_C100k_Fast", 1_000_000, 100_000, true},
 	}
 
-	fmt.Println("Benchmark Gas Consumption of CheckCredential (N = 100 credentials):")
+	fmt.Println("Benchmark Gas Consumption of CheckCredential (N = 500 credentials):")
 	fmt.Println("| Domain   | Capacity |   Mode   | Avg Gas Used | ETH (1 Gwei) |")
 	fmt.Println("|----------|----------|----------|--------------|--------------|")
 
@@ -456,7 +461,7 @@ func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
 	sim.Commit()
 
 	validCreds := testIssuer.GetAllValidCreds()
-	n := 100 // We test 100 random valid credentials
+	n := 500 // We test 500 random valid credentials
 	if len(validCreds) < n {
 		return 0, fmt.Errorf("expected %d valid creds, got %d", n, len(validCreds))
 	}
