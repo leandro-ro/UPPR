@@ -35,7 +35,7 @@ func TestProver_OneShow(t *testing.T) {
 }
 
 func TestProver_MultiShow(t *testing.T) {
-	prover, err := NewRevocationTokenProver()
+	prover, err := NewRevocationTokenProver("../zkp/sol/build/verifier.g16.pk", "../zkp/sol/build/verifier.g16.vk")
 	require.NoError(t, err)
 
 	iss := issuer.NewIssuer(issuer.MultiShow)
@@ -78,7 +78,7 @@ func BenchmarkProver_GenProof_OneShow(b *testing.B) {
 }
 
 func BenchmarkProver_GenProof_MultiShow(b *testing.B) {
-	prover, err := NewRevocationTokenProver()
+	prover, err := NewRevocationTokenProver("../zkp/sol/build/verifier.g16.pk", "../zkp/sol/build/verifier.g16.vk")
 	require.NoError(b, err)
 
 	iss := issuer.NewIssuer(issuer.MultiShow)

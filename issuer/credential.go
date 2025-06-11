@@ -4,13 +4,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/leandro-ro/go-ecvrf"
-	"math/big"
 )
 
 type CredentialType uint8
@@ -172,24 +170,6 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 	default:
 		return nil, nil, errors.New("unknown credential type")
 	}
-}
-
-func hashPublicKeyCoordinates(x, y *big.Int) ([]byte, error) {
-	// MiMC hash for zk-friendly applications
-	mod := ecc.BN254.ScalarField()
-	xCopy := new(big.Int).Mod(x, mod)
-	yCopy := new(big.Int).Mod(y, mod)
-
-	hfunc := mimc.NewMiMC()
-	_, err := hfunc.Write(xCopy.Bytes())
-	if err != nil {
-		return nil, err
-	}
-	_, err = hfunc.Write(yCopy.Bytes())
-	if err != nil {
-		return nil, err
-	}
-	return hfunc.Sum(nil), nil
 }
 
 func signAttribute(issuerKey []byte, msg []byte, version CredentialType) ([]byte, error) {

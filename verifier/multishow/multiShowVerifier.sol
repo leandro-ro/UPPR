@@ -57,14 +57,8 @@ contract MultiShowVerifier {
     /// @return valid True if credential is valid and not revoked.
     /// @return errorCode Code in [0–2] indicating the verification result
     ///                  (0: success, 1: zkSNARK proof invalid, 2: revoked)
-    /// @return pubKeyXx Issuer's public key X-coordinate (for debug).
-    /// @return pubKeyYy Issuer's public key Y-coordinate (for debug).
-    /// @return usedToken The revocation token that was checked.
-    /// @return usedEpoch The epoch that was checked.
     function checkCredential(
         uint256[8] calldata proof,
-        uint256 pubKeyX,
-        uint256 pubKeyY,
         uint256 token,
         uint256 epoch
     )
@@ -72,16 +66,12 @@ contract MultiShowVerifier {
     view
     returns (
         bool valid,
-        uint8 errorCode,
-        uint256 pubKeyXx,
-        uint256 pubKeyYy,
-        uint256 usedToken,
-        uint256 usedEpoch
+        uint8 errorCode
     )
     {
         uint256[4] memory input = [
-                    pubKeyX,
-                    pubKeyY,
+                    issuerPubKeyX,
+                    issuerPubKeyY,
                     token,
                     epoch
             ];
@@ -89,16 +79,16 @@ contract MultiShowVerifier {
         try verifier.verifyProof(proof, input) {
             // Proof is valid, continue
         } catch {
-            return (false, 1, issuerPubKeyX, issuerPubKeyY, token, epoch);
+            return (false, 1);
         }
 
         // Check Bloom filter
-        // (bool revoked, ) = bloom.testToken(abi.encodePacked(bytes32(token)));
-        // if (revoked) {
-        //    return (false, 2, issuerPubKeyX, issuerPubKeyY, token, epoch);
-        // }
+        (bool revoked, ) = bloom.testToken(abi.encodePacked(bytes32(token)));
+        if (revoked) {
+          return (false, 2);
+        }
 
-        return (true, 0, issuerPubKeyX, issuerPubKeyY, token, epoch);
+        return (true, 0);
     }
 
 }

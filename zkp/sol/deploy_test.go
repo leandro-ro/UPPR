@@ -216,14 +216,13 @@ func generateTestAssignment(t testing.TB) (witness.Witness, [4]*big.Int) {
 	token, epoch, err := zkp.GenCurrentRevocationToken(vrfKey.Sk)
 	require.NoError(t, err)
 
+	icSig := edddsaInCircuit.Signature{}
+	icSig.Assign(tedwards.BN254, cred)
+
 	assignment := &zkp.RevocationTokenProof{
-		VrfSecretKey: vrfKey.Sk,
-		VrfPublicKey: vrfKey.Pk,
-		CredSignature: func() edddsaInCircuit.Signature {
-			sig := edddsaInCircuit.Signature{}
-			sig.Assign(tedwards.BN254, cred)
-			return sig
-		}(),
+		VrfSecretKey:  vrfKey.Sk,
+		VrfPublicKey:  vrfKey.Pk,
+		CredSignature: icSig,
 		IssuerPubKey: edddsaInCircuit.PublicKey{
 			A: twistededwards.Point{X: issuerSk.PublicKey.A.X, Y: issuerSk.PublicKey.A.Y},
 		},

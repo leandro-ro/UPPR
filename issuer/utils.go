@@ -91,17 +91,16 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 			return nil, err
 		}
 
+		var xBig, yBig big.Int
 		x := sk.Pk.A.X.(fr.Element)
-		xslice := x.Bytes()
-		xBytes = append(xBytes, xslice[:]...)
-
+		x.BigInt(&xBig)
 		y := sk.Pk.A.Y.(fr.Element)
-		yslice := y.Bytes()
-		yBytes = append(yBytes, yslice[:]...)
+		y.BigInt(&yBig)
 
+		xBytes = xBig.Bytes()
+		yBytes = yBig.Bytes()
 		privateKey = sk.Sk
-
-		publicKeyHash, err = hashPublicKeyCoordinates(big.NewInt(0).SetBytes(xBytes), big.NewInt(0).SetBytes(yBytes))
+		publicKeyHash, err = zkp.HashEddsaPublicKey(sk.Pk)
 		if err != nil {
 			return nil, err
 		}

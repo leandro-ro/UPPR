@@ -7,7 +7,6 @@ import (
 	onchainVerifier "PrivacyPreservingRevocationCode/verifier/multishow/build"
 	zkpContract "PrivacyPreservingRevocationCode/zkp/sol/build"
 	"context"
-	"fmt"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -132,8 +131,8 @@ func TestMultiShow_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	sim.Commit()
 
-	validTestCred := testIssuer.GetAllRevokedCreds()[0]
-	prover, err := holder.NewRevocationTokenProver()
+	validTestCred := testIssuer.GetAllValidCreds()[0]
+	prover, err := holder.NewRevocationTokenProver("../../zkp/sol/build/verifier.g16.pk", "../../zkp/sol/build/verifier.g16.vk")
 	require.NoError(t, err)
 
 	proof, proofBytes, witness, witnessBytes, err := prover.GenProof(*validTestCred, epoch)
@@ -145,11 +144,7 @@ func TestMultiShow_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, prover.VerifyProof(proof, publicWitness))
 
-	fmt.Printf("Key x input %v\n", x)
-	fmt.Printf("Key y input %v\n", y)
-
-	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[0], witnessBytes[1], witnessBytes[2], witnessBytes[3])
-	fmt.Printf("CheckCredential result: %v\n", result)
+	result, err := verifierContract.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[2], witnessBytes[3])
 	require.NoError(t, err)
 	require.Zero(t, result.ErrorCode, "CheckCredential: Expected valid credential, got error code %d", result.ErrorCode)
 	require.True(t, result.Valid, "CheckCredential: Expected credential to be valid")

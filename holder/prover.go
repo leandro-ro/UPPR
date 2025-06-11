@@ -19,6 +19,7 @@ import (
 	"github.com/consensys/gnark/std/algebra/native/twistededwards"
 	eddsaInCicuit "github.com/consensys/gnark/std/signature/eddsa"
 	"math/big"
+	"os"
 	"reflect"
 )
 
@@ -31,17 +32,26 @@ type RevocationTokenProver struct {
 }
 
 // NewRevocationTokenProver initializes and returns a new RevocationTokenProver instance for generating and verifying proofs.
-func NewRevocationTokenProver() (*RevocationTokenProver, error) {
+func NewRevocationTokenProver(pkPath, vkPath string) (*RevocationTokenProver, error) {
 	var circuit zkp.RevocationTokenProof
 	r1, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &circuit)
 	if err != nil {
 		return nil, err
 	}
 
-	pk, vk, err := groth16.Setup(r1)
+	pkFile, err := os.Open(pkPath)
 	if err != nil {
 		return nil, err
 	}
+	pk := groth16.NewProvingKey(ecc.BN254)
+	_, err = pk.ReadFrom(pkFile)
+
+	vkFile, err := os.Open(vkPath)
+	if err != nil {
+		return nil, err
+	}
+	vk := groth16.NewVerifyingKey(ecc.BN254)
+	_, err = vk.ReadFrom(vkFile)
 
 	return &RevocationTokenProver{r1, pk, vk}, nil
 }
