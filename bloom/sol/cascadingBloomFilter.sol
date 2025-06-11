@@ -87,7 +87,7 @@ contract CascadingBloomFilter {
     /// @notice Test `token` against every layer. Returns (accepted, layerIndexReached).
     /// ‣ “Early‐accept” if you hit a zero‐bit in an odd‐indexed layer.
     /// ‣ On the last layer, require match == (lastIndex % 2 == 0).
-    function testToken(bytes calldata token) external view returns (bool, uint256) {
+    function testToken(bytes calldata token) public view returns (bool, uint256) {
         uint256 n = layers.length;
         require(n > 0, "No layers");
 
@@ -115,6 +115,11 @@ contract CascadingBloomFilter {
 
         // This point should never happen.
         revert("unreachable");
+    }
+
+    /// @notice Gas-measurable variant of `testToken`, intended for benchmarking only.
+    function measureTestTokenGas(bytes calldata token) external returns (bool, uint256) {
+      return testToken(token);
     }
 
     /// @notice Return metadata and full filter bytes for layer i.

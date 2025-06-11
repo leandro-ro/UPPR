@@ -12,12 +12,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 	"math/big"
+	"sort"
 	"testing"
 	"time"
 )
 
 // Uncomment the following if making changes to cascadingBloomFilter.sol and wanting to update the bindings.
-/*func TestCompileAndGenBindings(t *testing.T) {
+/*
+func TestCompileAndGenBindings(t *testing.T) {
 	// 1) Remove any existing build directory for a clean slate
 	buildDir := "build"
 	_ = os.RemoveAll(buildDir)
@@ -74,7 +76,8 @@ import (
 	require.Equal(t, buildDir, filepath.Dir(bindingPath), "binding not in build directory")
 
 	fmt.Printf("Generated files:\n- %s\n- %s\n- %s\n", binPath, abiPath, bindingPath)
-}*/
+}
+*/
 
 func TestDeploy(t *testing.T) {
 	// 1) Set up a simulated backend and a funded transactor
@@ -209,6 +212,71 @@ func TestUpdate(t *testing.T) {
 		require.Equal(t, lexpected, int(layer.Int64()), "expected layer %d, got %d at index %d", lexpected, int(layer.Int64()), i)
 	}
 
+}
+
+func BenchmarkTestTokenByLayer(b *testing.B) {
+	const domain = 1_000_000
+	const capacity = 100_000
+
+	privKey, err := crypto.GenerateKey()
+	require.NoError(b, err)
+	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
+	require.NoError(b, err)
+
+	alloc := core.GenesisAlloc{
+		auth.From: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+	}
+	sim := backends.NewSimulatedBackend(alloc, 30_000_000_000)
+
+	_, _, contract, err := onchain.DeployBloom(auth, sim)
+	require.NoError(b, err)
+	sim.Commit()
+
+	// Update cascade
+	cascade := bloom.NewCascade(domain, capacity)
+	valid, revoked := genRevocationTokens(domain, capacity)
+	err = cascade.Update(revoked, valid)
+	require.NoError(b, err)
+
+	onChainFilters, numHf, bitLens := cascade.GetOnChainFilter()
+	_, err = contract.UpdateCascade(auth, onChainFilters, numHf, bitLens)
+	require.NoError(b, err)
+	sim.Commit()
+
+	layerGas := make(map[int64][]uint64)
+	for _, tok := range revoked {
+
+		res, layer, err := contract.TestToken(&bind.CallOpts{}, tok)
+		require.NoError(b, err)
+		require.True(b, res, "token not detected as revoked")
+
+		tx, err := contract.MeasureTestTokenGas(auth, tok)
+		require.NoError(b, err)
+		sim.Commit()
+
+		receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
+		require.NoError(b, err)
+		layerGas[layer.Int64()] = append(layerGas[layer.Int64()], receipt.GasUsed)
+	}
+
+	// Output table
+	fmt.Println("| Layer | Avg Gas | Count |")
+	fmt.Println("|-------|---------|-------|")
+	var layers []int
+	for l := range layerGas {
+		layers = append(layers, int(l))
+	}
+	sort.Ints(layers)
+
+	for _, l := range layers {
+		gases := layerGas[int64(l)]
+		var sum uint64
+		for _, g := range gases {
+			sum += g
+		}
+		avg := sum / uint64(len(gases))
+		fmt.Printf("| %5d | %7d | %5d |\n", l, avg, len(gases))
+	}
 }
 
 // BenchmarkUpdateCascade benchmarks the gas consumption during the update process of an on-chain Bloom filter cascade.

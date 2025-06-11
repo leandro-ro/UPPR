@@ -91,4 +91,13 @@ contract MultiShowVerifier {
         return (true, 0);
     }
 
+    /// @notice Gas-measurable variant of `checkCredential`, intended for benchmarking only.
+    function measureCheckCredentialGas(
+        uint256[8] calldata proof,
+        uint256 token,
+        uint256 epoch
+    ) external returns (bool valid, uint8 errorCode) {
+        return checkCredential(proof, token, epoch);
+    }
+
 }
