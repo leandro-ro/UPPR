@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import {CascadingBloomFilter} from "bloom/sol/cascadingBloomFilter.sol";
 import {Verifier} from "zkp/sol/revocationTokenVerifier.sol";
-import "../vrf/VRF.sol";
+import "../../external/vrf/VRF.sol";
 
 /// @title MultiShowVerifier
 /// @notice Verifies revocation status of MultiShow credentials via zkSNARK proof and Bloom filter.

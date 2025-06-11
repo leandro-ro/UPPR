@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {CascadingBloomFilter} from "bloom/sol/cascadingBloomFilter.sol";
-import "../vrf/VRF.sol";
+import "../../external/vrf/VRF.sol";
 
 /// @title OneShowVerifier
 /// @notice Verifies credentials by checking an ECDSA signature on a VRF public key, reconstructing the VRF output, and querying a Bloom filter for revocation.

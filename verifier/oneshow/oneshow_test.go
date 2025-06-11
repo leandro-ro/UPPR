@@ -16,7 +16,8 @@ import (
 	"testing"
 )
 
-/*func TestOneShow_CompileAndGenBindings(t *testing.T) {
+/*
+func TestOneShow_CompileAndGenBindings(t *testing.T) {
 	buildDir := "build"
 	solFile := "OneShowVerifier.sol"
 
