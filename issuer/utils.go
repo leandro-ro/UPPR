@@ -36,6 +36,7 @@ type VrfKeyPair struct {
 	publicKey        VrfPublicKey
 	PublicKeyVrfHash []byte
 	version          CredentialType
+	ecdsaPrivKey     *ecdsa.PrivateKey // ecdsa version of pk. For performance reasons
 }
 
 func (v *VrfKeyPair) GetOneShowPublicKey() (*ecdsa.PublicKey, error) {
@@ -66,10 +67,18 @@ func (v *VrfKeyPair) GetPublicKeyForOnChain() ([]byte, error) {
 	return pubKey.SerializeCompressed(), nil
 }
 
+func (v *VrfKeyPair) GetEcdsaVersion() (*ecdsa.PrivateKey, error) {
+	if v.version != OneShow {
+		return nil, errors.New("GetEcdsaVersion only supported for OneShow credentials")
+	}
+	return v.ecdsaPrivKey, nil
+}
+
 func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 	var privateKey []byte
 	var publicKeyHash []byte
 	var xBytes, yBytes []byte
+	var ecdsaKey *ecdsa.PrivateKey
 
 	switch version {
 	case OneShow:
@@ -84,6 +93,8 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 
 		compressed := sk.PubKey().SerializeCompressed() // 33 bytes: 0x02/0x03 || X
 		publicKeyHash = crypto.Keccak256(compressed)
+
+		ecdsaKey = sk.ToECDSA()
 
 	case MultiShow:
 		sk, err := zkp.EddsaForCircuitKeyGen()
@@ -104,6 +115,7 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 		if err != nil {
 			return nil, err
 		}
+		ecdsaKey = nil
 
 	default:
 		return nil, errors.New("unknown credential type")
@@ -114,6 +126,7 @@ func NewVrfKeyPair(version CredentialType) (*VrfKeyPair, error) {
 		publicKey:        VrfPublicKey{xBytes, yBytes},
 		PublicKeyVrfHash: publicKeyHash,
 		version:          version,
+		ecdsaPrivKey:     ecdsaKey,
 	}, nil
 
 }

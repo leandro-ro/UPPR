@@ -3,6 +3,7 @@ package issuer
 import (
 	"PrivacyPreservingRevocationCode/bloom"
 	crand "crypto/rand"
+	"encoding/binary"
 	"errors"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"github.com/consensys/gnark-crypto/ecc/bn254/twistededwards/eddsa"
@@ -10,7 +11,6 @@ import (
 	mrand "math/rand"
 	"runtime"
 	"sync"
-	"time"
 )
 
 // Issuer maintains issued and revoked credentials.
@@ -150,7 +150,8 @@ func (i *Issuer) RevokeCredential(id uint) error {
 }
 
 func (i *Issuer) genRevocationTokens() (revoked, valid []RevocationToken, epoch int64, err error) {
-	epoch = time.Now().UTC().Unix()
+	epochBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(epochBytes, uint64(epoch))
 
 	type result struct {
 		token   RevocationToken
@@ -169,7 +170,7 @@ func (i *Issuer) genRevocationTokens() (revoked, valid []RevocationToken, epoch 
 		go func() {
 			defer wg.Done()
 			for cred := range jobs {
-				token, _, err := cred.GenRevocationToken(epoch)
+				token, err := cred.GenRevocationTokenNoProof(epochBytes)
 				if err != nil {
 					results <- result{err: err}
 					continue

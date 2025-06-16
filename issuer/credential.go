@@ -13,6 +13,8 @@ import (
 
 type CredentialType uint8
 
+var vrf = ecvrf.Secp256k1Sha256Tai
+
 const (
 	OneShow   CredentialType = 0
 	MultiShow CredentialType = 1
@@ -146,7 +148,6 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 
 	switch ic.Credential.Type {
 	case OneShow:
-		vrf := ecvrf.Secp256k1Sha256Tai
 		ecdsaKey := secp256k1.PrivKeyFromBytes(ic.VrfKeyPair.PrivateKey).ToECDSA()
 
 		t, p, err := vrf.Prove(ecdsaKey, epoch)
@@ -169,6 +170,39 @@ func (ic *InternalCredential) GenRevocationToken(unixEpoch int64) (token Revocat
 		return hf.Sum(nil), nil, nil
 	default:
 		return nil, nil, errors.New("unknown credential type")
+	}
+}
+
+// GenRevocationTokenNoProof generates a revocation token based on a given unix epoch without including a proof.
+// It supports OneShow and MultiShow credential types, returning an error if the type is unknown or token generation fails.
+func (ic *InternalCredential) GenRevocationTokenNoProof(epochByte []byte) (token RevocationToken, error error) {
+	switch ic.Credential.Type {
+	case OneShow:
+		ecdsaKey, err := ic.VrfKeyPair.GetEcdsaVersion()
+		if err != nil {
+			return nil, err
+		}
+
+		t, err := vrf.Eval(ecdsaKey, epochByte)
+		if err != nil {
+			return nil, err
+		}
+		return t, nil
+
+	case MultiShow:
+		// Compute revocationToken = Hash(epoch || vrf secret key)
+		hf := mimc.NewMiMC()
+		_, err := hf.Write(epochByte)
+		if err != nil {
+			return nil, err
+		}
+		_, err = hf.Write(ic.VrfKeyPair.PrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		return hf.Sum(nil), nil
+	default:
+		return nil, errors.New("unknown credential type")
 	}
 }
 
