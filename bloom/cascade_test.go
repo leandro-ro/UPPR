@@ -109,8 +109,8 @@ func TestCascade_LayerCountSanity(t *testing.T) {
 }
 
 func BenchmarkCascadeGeneration(b *testing.B) {
-	domainSizes := []int{10_000, 100_000, 1_000_000}
-	revocationRates := []float64{0.1, 0.05, 0.01}
+	domainSizes := []int{50_000, 100_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000}
+	revocationRates := []float64{0.05, 0.1}
 
 	for _, domain := range domainSizes {
 		for _, rate := range revocationRates {

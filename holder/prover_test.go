@@ -68,6 +68,7 @@ func BenchmarkProver_GenProof_OneShow(b *testing.B) {
 
 	epochUnix := time.Now().UTC().Unix()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		token, proof, err := cred.GenRevocationToken(epochUnix)
@@ -90,6 +91,7 @@ func BenchmarkProver_GenProof_MultiShow(b *testing.B) {
 
 	epochUnix := time.Now().UTC().Unix()
 
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _, _, _, err := prover.GenProof(cred, epochUnix)
