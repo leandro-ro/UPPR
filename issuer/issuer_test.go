@@ -122,7 +122,7 @@ func TestIssuer_GenRevocationArtifactMultiShow(t *testing.T) {
 func BenchmarkIssuer_GenRevocationArtifact(b *testing.B) {
 	domains := []int{50_000, 100_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000}
 	rates := []float64{0.10} // Does not affect the generation of the revocation artifact
-	modes := []CredentialType{MultiShow}
+	modes := []CredentialType{OneShow, MultiShow}
 
 	for _, mode := range modes {
 		for _, domain := range domains {
