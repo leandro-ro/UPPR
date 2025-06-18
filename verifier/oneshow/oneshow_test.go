@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"math/big"
 	"testing"
+	"time"
 )
 
 /*
@@ -361,7 +362,6 @@ func BenchmarkOneShow_PrecomputeFastParams(b *testing.B) {
 	}
 }
 
-// BenchmarkOneShow_GasCheckCredential benchmarks the average gas cost for verifying a credential.
 func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 	configs := []struct {
 		name     string
@@ -369,9 +369,8 @@ func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 		capacity int
 		fast     bool
 	}{
-
-		{"D1k_C50_Fast", 1_000, 50, true},   // we dont benchmark slow
-		{"D1k_C100_Fast", 1_000, 100, true}, // we dont benchmark slow
+		{"D1k_C50_Fast", 1_000, 50, true},
+		{"D1k_C100_Fast", 1_000, 100, true},
 		{"D10k_C500_Fast", 10_000, 500, true},
 		{"D10k_C1k_Fast", 10_000, 1_000, true},
 		{"D100k_C5k_Fast", 100_000, 5_000, true},
@@ -380,12 +379,12 @@ func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 		{"D1M_C100k_Fast", 1_000_000, 100_000, true},
 	}
 
-	fmt.Println("Benchmark Gas Consumption of CheckCredential (N = 500 credentials):")
-	fmt.Println("| Domain   | Capacity |   Mode   | Avg Gas Used | ETH (1 Gwei) |")
-	fmt.Println("|----------|----------|----------|--------------|--------------|")
+	fmt.Println("Benchmark Gas Consumption and Local Runtime of OneShow CheckCredential (N = 500 credentials):")
+	fmt.Println("| Domain   | Capacity |   Mode   | Avg Gas Used | ETH (1 Gwei) | Avg Local Time [ms] |")
+	fmt.Println("|----------|----------|----------|--------------|--------------|---------------------|")
 
 	for _, cfg := range configs {
-		avgGas, err := runOneShowBenchmark(cfg.domain, cfg.capacity, cfg.fast)
+		avgGas, avgTime, err := runOneShowBenchmark(cfg.domain, cfg.capacity, cfg.fast)
 		if err != nil {
 			b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
 		}
@@ -396,20 +395,20 @@ func BenchmarkOneShow_GasCheckCredential(b *testing.B) {
 			mode = "Slow"
 		}
 
-		fmt.Printf("| %8d | %8d | %8s | %12d | %.9f |\n", cfg.domain, cfg.capacity, mode, avgGas, ethCost)
+		fmt.Printf("| %8d | %8d | %8s | %12d | %.9f | %19.3f |\n",
+			cfg.domain, cfg.capacity, mode, avgGas, ethCost, float64(avgTime.Microseconds())/1000.0)
 	}
 }
 
-// runOneShowBenchmark runs CheckCredential on valid credentials and returns the average gas used.
-func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
+func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, time.Duration, error) {
 	testIssuer := issuer.NewIssuer(issuer.OneShow)
 	privKey, err := crypto.ToECDSA(testIssuer.GetPrivateKey())
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	auth, err := bind.NewKeyedTransactorWithChainID(privKey, big.NewInt(1337))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	alloc := core.GenesisAlloc{
@@ -419,89 +418,114 @@ func runOneShowBenchmark(domain, capacity int, fast bool) (uint64, error) {
 
 	bloomAddr, _, bloomContract, err := onchainBloom.DeployBloom(auth, sim)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	verifierAddr, _, verifier, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	tx, err := bloomContract.TransferOwnership(auth, verifierAddr)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	err = testIssuer.IssueCredentials(uint(domain))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	err = testIssuer.RevokeRandomCredentials(uint(capacity))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	artifact, _, _, epoch, err := testIssuer.GenRevocationArtifact()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	filter, ks, lens := artifact.GetOnChainFilter()
 	_, err = verifier.Update(auth, filter, ks, lens)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	validCreds := testIssuer.GetAllValidCreds()
-	n := 500 // We test 500 random valid credentials
+	n := 500
 	if len(validCreds) < n {
-		return 0, fmt.Errorf("expected %d valid creds, got %d", n, len(validCreds))
+		return 0, 0, fmt.Errorf("expected %d valid creds, got %d", n, len(validCreds))
 	}
 
 	var totalGas uint64
+	var totalTime time.Duration
+
 	for i := 0; i < n; i++ {
 		cred := validCreds[i]
 		_, proof, err := cred.GenRevocationToken(epoch)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		pubKey, err := cred.VrfKeyPair.GetPublicKeyForOnChain()
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 
 		var tx *types.Transaction
+		start := time.Now()
+		elapsed := time.Since(start)
 		if fast {
 			precomputedParams, err := verifier.GetFastVerifyParams(&bind.CallOpts{}, pubKey, proof, big.NewInt(epoch))
 			if err != nil {
-				return 0, err
+				return 0, 0, err
 			}
 
 			tx, err = verifier.MeasureCheckCredentialFastGas(auth, pubKey, cred.Credential.Signature, proof, big.NewInt(epoch), precomputedParams.UPoint, precomputedParams.VComponents)
 			if err != nil {
-				return 0, err
+				return 0, 0, err
+			}
+
+			// Local runtime
+			start = time.Now()
+			_, err = verifier.CheckCredentialFast(&bind.CallOpts{}, pubKey, cred.Credential.Signature, proof, big.NewInt(epoch), precomputedParams.UPoint, precomputedParams.VComponents)
+			elapsed = time.Since(start)
+			if err != nil {
+				return 0, 0, err
 			}
 		} else {
 			tx, err = verifier.MeasureCheckCredentialGas(auth, pubKey, cred.Credential.Signature, proof, big.NewInt(epoch))
 			if err != nil {
-				return 0, err
+				return 0, 0, err
+			}
+
+			// Local runtime
+			start = time.Now()
+			_, err = verifier.CheckCredential(&bind.CallOpts{}, pubKey, cred.Credential.Signature, proof, big.NewInt(epoch))
+			elapsed = time.Since(start)
+			if err != nil {
+				return 0, 0, err
 			}
 		}
+
+		totalTime += elapsed
+
 		sim.Commit()
 		receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		totalGas += receipt.GasUsed
 	}
 
-	return totalGas / uint64(n), nil
+	avgGas := totalGas / uint64(n)
+	avgTime := totalTime / time.Duration(n)
+	return avgGas, avgTime, nil
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"math/big"
 	"testing"
+	"time"
 )
 
 /*
@@ -178,37 +179,38 @@ func BenchmarkMultiShow_GasCheckCredential(b *testing.B) {
 		{"D1M_C100k", 1_000_000, 100_000},
 	}
 
-	fmt.Println("Benchmark Gas Consumption of MultiShow CheckCredential (N = 500 credentials):")
-	fmt.Println("| Domain   | Capacity | Avg Gas Used | ETH (1 Gwei) |")
-	fmt.Println("|----------|----------|--------------|--------------|")
+	fmt.Println("Benchmark Gas Consumption and Local Runtime of MultiShow CheckCredential (N = 500 credentials):")
+	fmt.Println("| Domain   | Capacity |   Mode   | Avg Gas Used | ETH (1 Gwei) | Avg Local Time [ms] |")
+	fmt.Println("|----------|----------|----------|--------------|--------------|---------------------|")
 
 	for _, cfg := range configs {
-		avgGas, err := runMultiShowBenchmark(cfg.domain, cfg.capacity)
+		avgGas, avgTime, err := runMultiShowBenchmark(cfg.domain, cfg.capacity)
 		if err != nil {
 			b.Fatalf("Benchmark failed for domain=%d, capacity=%d: %v", cfg.domain, cfg.capacity, err)
 		}
 
 		ethCost := float64(avgGas) * 1e-9 // gas price = 1 Gwei
-		fmt.Printf("| %8d | %8d | %12d | %.9f |\n", cfg.domain, cfg.capacity, avgGas, ethCost)
+		fmt.Printf("| %8d | %8d | %12d | %.9f | %14.3f |\n",
+			cfg.domain, cfg.capacity, avgGas, ethCost, float64(avgTime.Microseconds())/1000.0)
 	}
 }
 
-func runMultiShowBenchmark(domain, capacity int) (uint64, error) {
+func runMultiShowBenchmark(domain, capacity int) (uint64, time.Duration, error) {
 	testIssuer := issuer.NewIssuer(issuer.MultiShow)
 
 	issuerPubKey := eddsa.PublicKey{}
 	_, err := issuerPubKey.SetBytes(testIssuer.GetPublicKey())
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	privKeyContract, err := crypto.GenerateKey()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	auth, err := bind.NewKeyedTransactorWithChainID(privKeyContract, big.NewInt(1337))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	alloc := core.GenesisAlloc{
@@ -219,7 +221,7 @@ func runMultiShowBenchmark(domain, capacity int) (uint64, error) {
 	// Deploy Bloom filter
 	bloomAddr, _, bloomContract, err := onchainBloom.DeployBloom(auth, sim)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
@@ -231,52 +233,52 @@ func runMultiShowBenchmark(domain, capacity int) (uint64, error) {
 
 	zkpVerifierAddr, _, _, err := zkpContract.DeployZkp(auth, sim)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	verifierAddr, _, verifier, err := onchainVerifier.DeployVerifier(auth, sim, bloomAddr, zkpVerifierAddr, x, y)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	// Transfer ownership
 	tx, err := bloomContract.TransferOwnership(auth, verifierAddr)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 	_, err = sim.TransactionReceipt(context.Background(), tx.Hash())
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	// Issue credentials
 	err = testIssuer.IssueCredentials(uint(domain))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	err = testIssuer.RevokeRandomCredentials(uint(capacity))
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	artifact, _, _, epoch, err := testIssuer.GenRevocationArtifact()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	filter, hf, bitlen := artifact.GetOnChainFilter()
 	_, err = verifier.Update(auth, filter, hf, bitlen)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	sim.Commit()
 
 	prover, err := holder.NewRevocationTokenProver("../../zkp/sol/build/verifier.g16.pk", "../../zkp/sol/build/verifier.g16.vk")
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 
 	// Use first 500 valid credentials
@@ -284,29 +286,45 @@ func runMultiShowBenchmark(domain, capacity int) (uint64, error) {
 	n := 500
 
 	if len(validCreds) < n {
-		return 0, fmt.Errorf("expected at least %d valid credentials", n)
+		return 0, 0, fmt.Errorf("expected at least %d valid credentials", n)
 	}
 
+	var totalTime time.Duration
 	var totalGas uint64
 	for i := 0; i < n; i++ {
 		cred := validCreds[i]
 		_, proofBytes, _, witnessBytes, err := prover.GenProof(*cred, epoch)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 
 		tx, err := verifier.MeasureCheckCredentialGas(auth, proofBytes, witnessBytes[2], witnessBytes[3])
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		sim.Commit()
 
 		receipt, err := sim.TransactionReceipt(context.Background(), tx.Hash())
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		totalGas += receipt.GasUsed
+
+		start := time.Now()
+		res, err := verifier.CheckCredential(&bind.CallOpts{}, proofBytes, witnessBytes[2], witnessBytes[3])
+		elapsed := time.Since(start)
+		// end time here
+		if err != nil {
+			return 0, 0, err
+		}
+		if !res.Valid {
+			return 0, 0, fmt.Errorf("expected valid credential, got revoked credential")
+		}
+
+		totalTime += elapsed
 	}
 
-	return totalGas / uint64(n), nil
+	avgGas := totalGas / uint64(n)
+	avgTime := totalTime / time.Duration(n)
+	return avgGas, avgTime, nil
 }
