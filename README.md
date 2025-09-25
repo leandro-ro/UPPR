@@ -128,3 +128,9 @@ Benchmark gas consumption for verifying a multi-show credential presentation usi
 | 100000   | 10%      | 283309       | 0.000283309  | 2.171            |
 | 1000000  | 5%       | 281741       | 0.000281741  | 2.162            |
 | 1000000  | 10%      | 281661       | 0.000281661  | 2.173            |
+
+## Acknowledgment
+The financial support by the Austrian Federal Ministry of Economy, Energy and Tourism, the National Foundation for Research, Technology and Development and the Christian Doppler Research Association is gratefully acknowledged.
+
+## Copyright
+Use of the source code is governed by the Apache 2.0 license that can be found in the [LICENSE file](LICENSE.txt).
