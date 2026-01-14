@@ -1,5 +1,5 @@
 # UPPR: Universal Privacy-Preserving Revocation
-This repository is the proof-of-concept implementation of **UPPR**, a universal privacy-preserving revocation framework for Verifiable Credentials (VCs). UPPR supports both linkable (one-show/oVC) and unlinkable (multi-show/AC) credentials by combining Verifiable Random Functions (VRFs) with a scalable Bloom filter cascade. It enables efficient, metadata-free revocation without requiring holders to interact with issuers during credential presentation.
+This repository is the proof-of-concept implementation of **UPPR**, a universal privacy-preserving revocation framework for Verifiable Credentials (VCs) presented at the IEEE International Conference on Blockchain 2025 (https://ieeexplore.ieee.org/document/11264637). UPPR supports both linkable (one-show/oVC) and unlinkable (multi-show/AC) credentials by combining Verifiable Random Functions (VRFs) with a scalable Bloom filter cascade. It enables efficient, metadata-free revocation without requiring holders to interact with issuers during credential presentation.
 
 ## Project Structure
 
@@ -129,8 +129,22 @@ Benchmark gas consumption for verifying a multi-show credential presentation usi
 | 1000000  | 5%       | 281741       | 0.000281741  | 2.162            |
 | 1000000  | 10%      | 281661       | 0.000281661  | 2.173            |
 
+## Citation
+If you use this repository or build upon UPPR, please cite the following paper:
+
+```bibtex
+@INPROCEEDINGS{11264637,
+  author    = {Rometsch, Leandro and Lehwalder, Philipp-Florens and Hoang, Anh-Tu and Kaaser, Dominik and Schulte, Stefan},
+  title     = {{UPPR: Universal Privacy-Preserving Revocation}},
+  booktitle = {{2025 IEEE International Conference on Blockchain (Blockchain)}},
+  year      = {2025},
+  pages     = {161--170},
+  doi       = {10.1109/Blockchain67634.2025.00030}
+}
+```
+
 ## Acknowledgment
-The financial support by the Austrian Federal Ministry of Economy, Energy and Tourism, the National Foundation for Research, Technology and Development and the Christian Doppler Research Association is gratefully acknowledged.
+The financial support by the Austrian Federal Ministry of Economy, Energy and Tourism, the National Foundation for Research, Technology and Development and the Christian Doppler Research Association is gratefully acknowledged. Further, this result is part of a project that received funding from the European Research Council (ERC) under the European Union’s Horizon 2020 and Horizon Europe research and innovation programs (grant CRYPTOLAYER-101044770). We also thank Mirko Mollik of the German Federal Agency for Breakthrough Innovation (SPRIND) for providing valuable industry insights.
 
 ## Copyright
 Use of the source code is governed by the Apache 2.0 license that can be found in the [LICENSE file](LICENSE.txt).
