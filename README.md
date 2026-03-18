@@ -2,6 +2,13 @@
 This repository contains the proof-of-concept implementation of UPPR, a universal privacy-preserving revocation framework for Verifiable Credentials (VCs), presented at the IEEE International Conference on Blockchain 2025 (https://ieeexplore.ieee.org/document/11264637).
 UPPR supports both linkable one-show credentials (oVCs) and unlinkable Anonymous Credentials (ACs) by combining Verifiable Random Functions (VRFs) with a Bloom filter cascade. Revocation artifacts leak no metadata, holders never need to contact the issuer or any third party to prove non-revocation, and verifiers learn nothing beyond the credential's revocation status at the time of presentation. While the construction is agnostic to the underlying infrastructure, this implementation deploys the revocation artifact as an Ethereum smart contract.
 
+## How it works
+Each credential is bound to a VRF key pair at issuance, with the public key embedded as a credential attribute and the secret key shared between issuer and holder. To revoke a credential, the issuer evaluates the VRF over the current epoch and publishes the resulting token in a Bloom filter cascade (i.e. a layered construction that eliminates false positives). The cascade is padded with random dummy tokens to hide the true number of revocations.
+
+During presentation, the holder computes a fresh revocation token for the current epoch. For oVCs, the token and VRF proof are disclosed directly to the verifier. For ACs, a single zero-knowledge proof attests to the token's correctness without revealing the underlying key or any linkable information. In both cases, the verifier validates the token and checks its non-inclusion in the cascade. If the token is absent, the credential is not revoked.
+
+Because proof generation depends only on the holder's secret key and the current epoch, holders never need to fetch the revocation artifact or contact any external party. The implementation uses [go-ecvrf](https://github.com/vechain/go-ecvrf) and [vrf-solidity](https://github.com/witnet/vrf-solidity) for the VRF, [gnark](https://github.com/Consensys/gnark) with Groth16 for the AC zero-knowledge proofs, and Solidity for the on-chain revocation artifact. Since the construction only requires the revocation artifact to be publicly readable and exclusively updatable by the issuer, it can equally be deployed on traditional infrastructure, e.g., a signed file hosted on a CDN.
+
 ## Project Structure
 
 ### `bloom`
