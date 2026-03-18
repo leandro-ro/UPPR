@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+title: "UPPR: Universal Privacy-Preserving Revocation"
+message: "If you use this software, please cite our paper."
+type: software
+authors:
+  - family-names: Rometsch
+    given-names: Leandro
+  - family-names: Lehwalder
+    given-names: Philipp-Florens
+  - family-names: Hoang
+    given-names: Anh-Tu
+  - family-names: Kaaser
+    given-names: Dominik
+  - family-names: Schulte
+    given-names: Stefan
+repository-code: "https://github.com/leandro-ro/UPPR"
+preferred-citation:
+  type: conference-paper
+  title: "UPPR: Universal Privacy-Preserving Revocation"
+  authors:
+    - family-names: Rometsch
+      given-names: Leandro
+    - family-names: Lehwalder
+      given-names: Philipp-Florens
+    - family-names: Hoang
+      given-names: Anh-Tu
+    - family-names: Kaaser
+      given-names: Dominik
+    - family-names: Schulte
+      given-names: Stefan
+  collection-title: "2025 IEEE International Conference on Blockchain (Blockchain)"
+  year: 2025
+  start: 161
+  end: 170
+  doi: "10.1109/Blockchain67634.2025.00030"
