@@ -1,5 +1,6 @@
 # UPPR: Universal Privacy-Preserving Revocation
-This repository is the proof-of-concept implementation of **UPPR**, a universal privacy-preserving revocation framework for Verifiable Credentials (VCs) presented at the IEEE International Conference on Blockchain 2025 (https://ieeexplore.ieee.org/document/11264637). UPPR supports both linkable (one-show/oVC) and unlinkable (multi-show/AC) credentials by combining Verifiable Random Functions (VRFs) with a scalable Bloom filter cascade. It enables efficient, metadata-free revocation without requiring holders to interact with issuers during credential presentation.
+This repository contains the proof-of-concept implementation of UPPR, a universal privacy-preserving revocation framework for Verifiable Credentials (VCs), presented at the IEEE International Conference on Blockchain 2025 (https://ieeexplore.ieee.org/document/11264637).
+UPPR supports both linkable one-show credentials (oVCs) and unlinkable Anonymous Credentials (ACs) by combining Verifiable Random Functions (VRFs) with a Bloom filter cascade. Revocation artifacts leak no metadata, holders never need to contact the issuer or any third party to prove non-revocation, and verifiers learn nothing beyond the credential's revocation status at the time of presentation. While the construction is agnostic to the underlying infrastructure, this implementation deploys the revocation artifact as an Ethereum smart contract.
 
 ## Project Structure
 
